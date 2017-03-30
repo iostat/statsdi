@@ -1,0 +1,37 @@
+name:                statsdi
+version:             0.1.0.0
+synopsis:            A lovely [Dog]StatsD implementation
+-- description:
+homepage:            https://github.com/iostat/statsdi#readme
+license:             MIT
+license-file:        LICENSE
+author:              Ilya Ostrovskiy
+maintainer:          first-name@thenumber200-thewordproof.cc
+copyright:           2017 Ilya Ostrovskiy
+category:            Metrics
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Control.Monad.Stats
+  build-depends:       base >= 4.7 && < 5
+                     , text
+                     , ether
+                     , transformers
+                     , template-haskell >= 2.11.1.0 && < 2.12
+  default-language:    Haskell2010
+
+test-suite statsdi-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , statsdi
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/iostat/statsdi
