@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes            #-}
 module Control.Monad.Stats.Ethereal
     ( MonadStats
-    , StatsT(..)
     , tick
     , tickBy
     , setCounter
@@ -14,16 +13,14 @@ module Control.Monad.Stats.Ethereal
     , sample
     , reportEvent
     , reportServiceCheck
-    , runStatsT
     ) where
 
-import           Control.Concurrent
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Control.Monad.Stats.Types
 import           Data.IORef
-import           Data.Map                  (Map)
-import qualified Data.Map                  as Map
+import           Data.Map.Strict           (Map)
+import           Data.Time                 (NominalDiffTime)
 
 type MonadStats t m = (Monad m, MonadIO m, MonadReader t StatsTEnvironment m)
 
@@ -67,18 +64,3 @@ reportEvent        = undefined
 
 reportServiceCheck :: (MonadStats tag m) => proxy tag -> ServiceCheck -> m ()
 reportServiceCheck = undefined
-
-forkStatsThread :: (MonadIO m, Monad m) => StatsTEnvironment -> m ThreadId
-forkStatsThread = undefined
-
-data (Monad m, MonadIO m) => StatsT t m a = StatsT { _m :: ReaderT t StatsTEnvironment m a }
-
-runStatsT :: (Monad m, MonadIO m) => proxy t -> StatsTConfig -> StatsT t m a -> m a
-runStatsT t c StatsT{_m = m} = do
-    theEnv <- mkStatsTEnv c
-    flip (runReaderT t) theEnv $ do
-        tid <- forkStatsThread theEnv
-        ret <- m
-        liftIO $ killThread tid
-        return ret
-

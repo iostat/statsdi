@@ -20,7 +20,9 @@ library
                      , Control.Monad.Stats.TH
                      , Control.Monad.Stats.Types
   build-depends:       base >= 4.7 && < 5
-                     , text
+                     , network
+                     , time
+                     , bytestring
                      , ether
                      , transformers
                      , template-haskell >= 2.11.1.0 && < 2.12
