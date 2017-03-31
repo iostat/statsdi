@@ -18,18 +18,35 @@ import           Data.Time.Clock        (UTCTime)
 
 type Tag  = (ByteString, ByteString)
 type Tags = [Tag]
-type Uid  = ByteString
+type Uid  = (ByteString, Tags)
 
 data MetricStore =
     MetricStore { metricValue :: Int
                 , metricSampleRate :: Float
                 } deriving (Eq, Ord, Read, Show)
 
-data Metric = Counter   { name :: ByteString, tags :: Tags }
-            | Gauge     { name :: ByteString, tags :: Tags }
-            | Timer     { name :: ByteString, tags :: Tags }
-            | Histogram { name :: ByteString, tags :: Tags }
-            | Set       { name :: ByteString, tags :: Tags }
+class (Eq m, Ord m, Read m, Show m) => Metric m where
+    metricName    :: m -> ByteString
+    metricTags    :: m -> Tags
+    serialize     :: m -> MetricStore -> ByteString
+    metricTypeTag :: m -> ByteString
+
+metricUid :: Metric m => m -> Uid
+metricUid m = (metricName m, metricTags m)
+
+data Counter = Counter { counterName :: ByteString, counterTags :: Tags, counterUid :: Uid }
+    deriving (Eq, Ord, Read, Show)
+
+data Gauge = Gauge { gaugeName :: ByteString, gaugeTags :: Tags, gaugeUid :: Uid }
+    deriving (Eq, Ord, Read, Show)
+
+data Timer = Timer { timerName :: ByteString, timerTags :: Tags, timerUid :: Uid }
+    deriving (Eq, Ord, Read, Show)
+
+data Histogram = Histogram { histogramName :: ByteString , histogramTags :: Tags, histogramUid :: Uid }
+    deriving (Eq, Ord, Read, Show)
+
+data Set = Set { setName :: ByteString, setTags :: Tags, setUid :: Uid }
     deriving (Eq, Ord, Read, Show)
 
 data Event =
@@ -58,38 +75,43 @@ data AlertType = Error | Warning | Info | Success
 data ServiceCheckStatus = StatusOK | StatusWarning | StatusCritical | StatusUnknown
     deriving (Eq, Ord, Read, Show)
 
-serialize :: Metric -> MetricStore -> ByteString
-serialize m s =
-    ByteString.snoc (serializeMetricValue m s) "|c"
-serialize Gauge{..} MetricStore{..} =
-    ByteString.concat [ gaugeName, ":"
-                      , Char8.pack (show metricValue)
-                      , "|g"
-                      ]
+justMetricValue :: m -> MetricStore -> ByteString
+justMetricValue _ = Char8.pack . show . metricValue
 
-serialize Timer{..} MetricStore{..} =
-    ByteString.concat [ timerName, ":"
-                      , Char8.pack (show metricValue)
-                      , "|ms"
-                      ]
+instance Metric Counter where
+    metricName = counterName
+    metricTags = counterTags
+    serialize  = justMetricValue
+    metricTypeTag _ = "|c"
 
-serialize Histogram{..} MetricStore{..} =
-    ByteString.concat [ histogramName, ":"
-                      , Char8.pack (show metricValue)
-                      , "|h"
-                      , "|@", Char8.pack (show metricSampleRate)
-                      ]
-serialize Set{..} MetricStore{..} =
-    ByteString.concat [ setName, ":"
-                      , Char8.pack (show metricValue)
-                      , "|s"
-                      ]
+instance Metric Gauge where
+    metricName = gaugeName
+    metricTags = gaugeTags
+    serialize  = justMetricValue
+    metricTypeTag _ = "|g"
 
-metricUid :: Metric -> Uid
-metricUid m = Char8.pack $ show (name m, tags m)
 
-serializeMetricValue :: Metric -> MetricStore -> ByteString
-serializeMetricValue m s = ByteString.concat [name m, ":", metricBVal]
+instance Metric Timer where
+    metricName = timerName
+    metricTags = timerTags
+    serialize  = justMetricValue
+    metricTypeTag _ = "|ms"
+
+instance Metric Histogram where
+    metricName = histogramName
+    metricTags = histogramTags
+    serialize _ MetricStore{..} =
+        ByteString.concat [ Char8.pack (show metricValue)
+                          , "|@"
+                          , Char8.pack (show metricSampleRate)
+                          ]
+    metricTypeTag _ = "|h"
+
+instance Metric Set where
+    metricName = setName
+    metricTags = setTags
+    serialize  = justMetricValue
+    metricTypeTag _ = "|s"
 
 data StatsTConfig =
     StatsTConfig { host          :: !String
@@ -110,10 +132,10 @@ envState (StatsTEnvironment (_, b)) = b
 
 type MetricMap = Map Uid MetricStore
 
-metricMapLookup :: Metric -> MetricMap -> Maybe MetricStore
+metricMapLookup :: Metric m => m -> MetricMap -> Maybe MetricStore
 metricMapLookup m = Map.lookup (metricUid m)
 
-metricMapInsert :: Metric -> MetricStore -> MetricMap -> MetricMap
+metricMapInsert :: Metric m => m -> MetricStore -> MetricMap -> MetricMap
 metricMapInsert m = Map.insert (metricUid m)
 
 newtype StatsTState =

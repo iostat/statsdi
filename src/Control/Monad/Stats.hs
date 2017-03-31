@@ -67,15 +67,14 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
           getMicrotime = (round . (* 1000000.0) . toDouble) `fmap` getPOSIXTime
               where toDouble = realToFrac :: Real a => a -> Double
 
-          getAndWipeStates :: IO [(Uid, Int)]
+          getAndWipeStates :: IO [(Uid, MetricStore)]
           getAndWipeStates = atomicModifyIORef' state $ \(StatsTState x) ->
-                (StatsTState $ Map.map (const 0) x, Map.toList x)
+                (StatsTState $ Map.map (const MetricStore{metricValue = 0, metricSampleRate = 0}) x, Map.toList x)
 
           reportSamples :: Socket.Socket -> IO ()
           reportSamples socket = getAndWipeStates >>= mapM_ (reportSample socket)
-              where reportSample :: Socket.Socket -> (Uid, Int) -> IO ()
-                    reportSample socket ((name, tags), value) = do
-                        Socket.send
+              where reportSample :: Socket.Socket -> (Uid, MetricStore) -> IO ()
+                    reportSample socket ((name, tags), value) = undefined
 
           defaultRenderedTags :: ByteString
           defaultRenderedTags = renderTags (defaultTags cfg)
