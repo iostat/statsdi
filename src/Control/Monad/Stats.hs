@@ -10,9 +10,9 @@ import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as ByteString
+import           Data.HashMap.Strict          (HashMap)
+import qualified Data.HashMap.Strict          as HashMap
 import           Data.IORef
-import           Data.Map.Strict              (Map)
-import qualified Data.Map.Strict              as Map
 import           Data.Time.Clock.POSIX        (getPOSIXTime)
 import qualified Network.Socket               as Socket hiding (recv, recvFrom,
                                                          send, sendTo)
@@ -21,7 +21,6 @@ import qualified Network.Socket.ByteString    as Socket
 import           Control.Monad.Stats.Ethereal as Export
 import           Control.Monad.Stats.TH       as Export
 import           Control.Monad.Stats.Types    as Export
-
 
 -- sample usage
 --
@@ -67,30 +66,31 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
           getMicrotime = (round . (* 1000000.0) . toDouble) `fmap` getPOSIXTime
               where toDouble = realToFrac :: Real a => a -> Double
 
-          getAndWipeStates :: IO [(Uid, MetricStore)]
+          getAndWipeStates :: IO [(MetricStoreKey, MetricStore)]
           getAndWipeStates = atomicModifyIORef' state $ \(StatsTState x) ->
-                (StatsTState $ Map.map (const MetricStore{metricValue = 0, metricSampleRate = 0}) x, Map.toList x)
+                (StatsTState $ HashMap.map (const 0) x, HashMap.toList x)
 
           reportSamples :: Socket.Socket -> IO ()
           reportSamples socket = getAndWipeStates >>= mapM_ (reportSample socket)
-              where reportSample :: Socket.Socket -> (Uid, MetricStore) -> IO ()
-                    reportSample socket ((name, tags), value) = undefined
+              where reportSample :: Socket.Socket -> (MetricStoreKey, MetricStore) -> IO ()
+                    reportSample socket (key, value) = undefined
 
           defaultRenderedTags :: ByteString
           defaultRenderedTags = renderTags (defaultTags cfg)
+
           renderTags :: Tags -> ByteString
           renderTags = ByteString.intercalate "," . map renderTag
               where renderTag :: Tag -> ByteString
                     renderTag (k, v) = ByteString.concat [k, ":", v]
 
 
-data (Monad m, MonadIO m) => StatsT t m a = StatsT { _m :: ReaderT t StatsTEnvironment m a }
+newtype (Monad m, MonadIO m) => StatsT t m a = StatsT { _runStatsT :: ReaderT t StatsTEnvironment m a }
 
 runStatsT :: (Monad m, MonadIO m) => proxy t -> StatsTConfig -> StatsT t m a -> m a
-runStatsT t c StatsT{_m = m} = do
+runStatsT t c m = do
     theEnv <- mkStatsTEnv c
     flip (runReaderT t) theEnv $ do
         tid <- forkStatsThread theEnv
-        ret <- m
+        ret <- _runStatsT m
         liftIO $ killThread tid
         return ret

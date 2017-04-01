@@ -1,9 +1,7 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE Rank2Types            #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TupleSections              #-}
 module Control.Monad.Stats.Types where
 
 import           Control.Monad.Ether
@@ -11,42 +9,74 @@ import           Control.Monad.IO.Class
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as ByteString
 import qualified Data.ByteString.Char8  as Char8
+import           Data.Hashable
+import           Data.HashMap.Strict    (HashMap)
+import qualified Data.HashMap.Strict    as HashMap
 import           Data.IORef
-import           Data.Map.Strict        (Map)
-import qualified Data.Map.Strict        as Map
 import           Data.Time.Clock        (UTCTime)
 
 type Tag  = (ByteString, ByteString)
 type Tags = [Tag]
-type Uid  = (ByteString, Tags)
+newtype Uid = Uid Int deriving (Eq, Ord, Read, Show)
+newtype SampleRate = SampleRate Float deriving (Eq, Ord, Read, Show)
 
-data MetricStore =
-    MetricStore { metricValue :: Int
-                , metricSampleRate :: Float
-                } deriving (Eq, Ord, Read, Show)
+data MetricStoreKey = CounterKey   { ckMetric :: Counter   }
+                    | GaugeKey     { gkMetric :: Gauge     }
+                    | TimerKey     { tkMetric :: Timer     }
+                    | HistogramKey { hkMetric :: Histogram }
+                    | SetKey       { skMetric :: Set       }
+                    deriving (Eq, Ord, Read, Show)
+
+isHistogram :: MetricStoreKey -> Bool
+isHistogram (HistogramKey _) = True
+isHistogram _                = False
+
+histogramSampleRate :: MetricStoreKey -> SampleRate
+histogramSampleRate (HistogramKey h) = _histogramSampleRate h
+histogramSampleRate _ = error "called histogramSampleRate on a non-HistogramKey. pls use `isHistogram` to avoid this"
+
+newtype MetricStore = MetricStore { metricValue :: Int } deriving (Eq, Ord, Read, Show, Enum, Num, Real, Integral)
 
 class (Eq m, Ord m, Read m, Show m) => Metric m where
-    metricName    :: m -> ByteString
-    metricTags    :: m -> Tags
-    serialize     :: m -> MetricStore -> ByteString
-    metricTypeTag :: m -> ByteString
+    metricStoreKey :: m -> MetricStoreKey
 
-metricUid :: Metric m => m -> Uid
-metricUid m = (metricName m, metricTags m)
+instance Hashable MetricStoreKey where
+    hashWithSalt salt m = salt `hashWithSalt` keyName m `hashWithSalt` keyTags m `hashWithSalt` keyKind m
 
-data Counter = Counter { counterName :: ByteString, counterTags :: Tags, counterUid :: Uid }
+keyName :: MetricStoreKey -> ByteString
+keyName (CounterKey m)   = counterName m  -- this is literally a crime against humanity
+keyName (GaugeKey m)     = gaugeName m
+keyName (TimerKey m)     = timerName m
+keyName (HistogramKey m) = histogramName m
+keyName (SetKey m)       = setName m
+
+keyTags :: MetricStoreKey -> Tags
+keyTags (CounterKey m)   = counterTags m
+keyTags (GaugeKey m)     = gaugeTags m
+keyTags (TimerKey m)     = timerTags m
+keyTags (HistogramKey m) = histogramTags m
+keyTags (SetKey m)       = setTags m
+
+keyKind :: MetricStoreKey -> ByteString
+keyKind (CounterKey m)   = "|c"
+keyKind (GaugeKey m)     = "|g"
+keyKind (TimerKey m)     = "|ms"
+keyKind (HistogramKey m) = "|h"
+keyKind (SetKey m)       = "|s"
+
+data Counter = Counter { counterName :: ByteString, counterTags :: Tags }
     deriving (Eq, Ord, Read, Show)
 
-data Gauge = Gauge { gaugeName :: ByteString, gaugeTags :: Tags, gaugeUid :: Uid }
+data Gauge = Gauge { gaugeName :: ByteString, gaugeTags :: Tags }
     deriving (Eq, Ord, Read, Show)
 
-data Timer = Timer { timerName :: ByteString, timerTags :: Tags, timerUid :: Uid }
+data Timer = Timer { timerName :: ByteString, timerTags :: Tags }
     deriving (Eq, Ord, Read, Show)
 
-data Histogram = Histogram { histogramName :: ByteString , histogramTags :: Tags, histogramUid :: Uid }
+data Histogram = Histogram { histogramName :: ByteString , histogramTags :: Tags, _histogramSampleRate :: SampleRate }
     deriving (Eq, Ord, Read, Show)
 
-data Set = Set { setName :: ByteString, setTags :: Tags, setUid :: Uid }
+data Set = Set { setName :: ByteString, setTags :: Tags }
     deriving (Eq, Ord, Read, Show)
 
 data Event =
@@ -75,43 +105,20 @@ data AlertType = Error | Warning | Info | Success
 data ServiceCheckStatus = StatusOK | StatusWarning | StatusCritical | StatusUnknown
     deriving (Eq, Ord, Read, Show)
 
-justMetricValue :: m -> MetricStore -> ByteString
-justMetricValue _ = Char8.pack . show . metricValue
-
 instance Metric Counter where
-    metricName = counterName
-    metricTags = counterTags
-    serialize  = justMetricValue
-    metricTypeTag _ = "|c"
+    metricStoreKey = CounterKey
 
 instance Metric Gauge where
-    metricName = gaugeName
-    metricTags = gaugeTags
-    serialize  = justMetricValue
-    metricTypeTag _ = "|g"
-
+    metricStoreKey = GaugeKey
 
 instance Metric Timer where
-    metricName = timerName
-    metricTags = timerTags
-    serialize  = justMetricValue
-    metricTypeTag _ = "|ms"
+    metricStoreKey = TimerKey
 
 instance Metric Histogram where
-    metricName = histogramName
-    metricTags = histogramTags
-    serialize _ MetricStore{..} =
-        ByteString.concat [ Char8.pack (show metricValue)
-                          , "|@"
-                          , Char8.pack (show metricSampleRate)
-                          ]
-    metricTypeTag _ = "|h"
+    metricStoreKey = HistogramKey
 
 instance Metric Set where
-    metricName = setName
-    metricTags = setTags
-    serialize  = justMetricValue
-    metricTypeTag _ = "|s"
+    metricStoreKey = SetKey
 
 data StatsTConfig =
     StatsTConfig { host          :: !String
@@ -130,18 +137,16 @@ envConfig (StatsTEnvironment (a, _)) = a
 envState :: StatsTEnvironment -> IORef StatsTState
 envState (StatsTEnvironment (_, b)) = b
 
-type MetricMap = Map Uid MetricStore
+type MetricMap = HashMap MetricStoreKey MetricStore
 
 metricMapLookup :: Metric m => m -> MetricMap -> Maybe MetricStore
-metricMapLookup m = Map.lookup (metricUid m)
+metricMapLookup = HashMap.lookup . metricStoreKey
 
 metricMapInsert :: Metric m => m -> MetricStore -> MetricMap -> MetricMap
-metricMapInsert m = Map.insert (metricUid m)
+metricMapInsert = HashMap.insert . metricStoreKey
 
-newtype StatsTState =
-    StatsTState { registeredMetrics :: MetricMap
-                } deriving (Eq, Ord, Read, Show)
+newtype StatsTState = StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore } deriving (Eq, Read, Show)
 
 mkStatsTEnv :: (MonadIO m, Monad m) => StatsTConfig -> m StatsTEnvironment
 mkStatsTEnv conf = liftIO $
-    StatsTEnvironment . (conf,) <$> newIORef (StatsTState Map.empty)
+    StatsTEnvironment . (conf,) <$> newIORef (StatsTState HashMap.empty)

@@ -1,9 +1,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
 module Control.Monad.Stats.Ethereal
     ( MonadStats
     , tick
@@ -19,8 +16,8 @@ module Control.Monad.Stats.Ethereal
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Control.Monad.Stats.Types
+import           Data.HashMap.Strict       (HashMap)
 import           Data.IORef
-import           Data.Map.Strict           (Map)
 import           Data.Time                 (NominalDiffTime)
 
 type MonadStats t m = (Monad m, MonadIO m, MonadReader t StatsTEnvironment m)
@@ -41,26 +38,26 @@ tickBy :: (MonadIO m, MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
 tickBy tag n c = updSTS tag f
     where f (StatsTState m) = StatsTState $ case metricMapLookup c m of
             Nothing -> metricMapInsert c MetricStore{metricValue = n} m
-            Just MetricStore{..}  -> metricMapInsert c MetricStore{metricValue = n + metricValue} m
+            Just (MetricStore n')  -> metricMapInsert c (MetricStore (n' + n)) m
 
-lolicantthinkofnames :: (MonadStats tag m, Metric m') => proxy tag -> Int -> m' -> m ()
-lolicantthinkofnames tag v c = updSTS tag f
-    where f (StatsTState m) = StatsTState $ metricMapInsert c MetricStore{metricValue = v} m
+setRegularValue :: (MonadStats tag m, Metric m') => proxy tag -> Int -> m' -> m ()
+setRegularValue tag v c = updSTS tag f
+    where f (StatsTState m) = StatsTState $ metricMapInsert c (fromIntegral v) m
 
-setCounter         :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
-setCounter = lolicantthinkofnames
+setCounter :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
+setCounter = setRegularValue
 
-setGauge           :: (MonadStats tag m) => proxy tag -> Int -> Gauge -> m ()
-setGauge = lolicantthinkofnames
+setGauge :: (MonadStats tag m) => proxy tag -> Int -> Gauge -> m ()
+setGauge = setRegularValue
 
-time               :: (MonadStats tag m) => proxy tag -> NominalDiffTime -> Timer -> m ()
-time tag t = lolicantthinkofnames tag v
+time :: (MonadStats tag m) => proxy tag -> NominalDiffTime -> Timer -> m ()
+time tag t = setRegularValue tag v
     where v = 12345
-sample             :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
-sample = lolicantthinkofnames
+sample  :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
+sample = setRegularValue
 
-reportEvent        :: (MonadStats tag m) => proxy tag -> Event -> m ()
-reportEvent        = undefined
+reportEvent :: (MonadStats tag m) => proxy tag -> Event -> m ()
+reportEvent = undefined
 
 reportServiceCheck :: (MonadStats tag m) => proxy tag -> ServiceCheck -> m ()
 reportServiceCheck = undefined
