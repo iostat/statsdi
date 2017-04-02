@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Control.Monad.Stats
     ( module Export
@@ -10,6 +11,7 @@ import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as ByteString
+import qualified Data.ByteString.Char8        as Char8
 import           Data.HashMap.Strict          (HashMap)
 import qualified Data.HashMap.Strict          as HashMap
 import           Data.IORef
@@ -71,9 +73,16 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
                 (StatsTState $ HashMap.map (const 0) x, HashMap.toList x)
 
           reportSamples :: Socket.Socket -> IO ()
-          reportSamples socket = getAndWipeStates >>= mapM_ (reportSample socket)
-              where reportSample :: Socket.Socket -> (MetricStoreKey, MetricStore) -> IO ()
-                    reportSample socket (key, value) = undefined
+          reportSamples socket = getAndWipeStates >>= mapM_ reportSample
+              where reportSample :: (MetricStoreKey, MetricStore) -> IO ()
+                    reportSample (key, value) = void $ Socket.send socket message
+                        where message    = ByteString.concat [keyName key, ":", value', keyKind key, sampleRate, tagSep, allTags]
+                              value'     = Char8.pack (show value)
+                              sampleRate = if isHistogram key
+                                           then ByteString.concat ["|@", Char8.pack . show $ histogramSampleRate key]
+                                           else ""
+                              tagSep     = if ByteString.null allTags then "" else "|#"
+                              allTags    = ByteString.intercalate "," [defaultRenderedTags, renderTags (keyTags key)]
 
           defaultRenderedTags :: ByteString
           defaultRenderedTags = renderTags (defaultTags cfg)
@@ -84,7 +93,7 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
                     renderTag (k, v) = ByteString.concat [k, ":", v]
 
 
-newtype (Monad m, MonadIO m) => StatsT t m a = StatsT { _runStatsT :: ReaderT t StatsTEnvironment m a }
+newtype StatsT t m a = StatsT { _runStatsT :: ReaderT t StatsTEnvironment m a }
 
 runStatsT :: (Monad m, MonadIO m) => proxy t -> StatsTConfig -> StatsT t m a -> m a
 runStatsT t c m = do
