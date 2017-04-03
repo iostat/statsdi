@@ -17,7 +17,6 @@ import           Data.Time.Clock        (UTCTime)
 
 type Tag  = (ByteString, ByteString)
 type Tags = [Tag]
-newtype Uid = Uid Int deriving (Eq, Ord, Read, Show)
 newtype SampleRate = SampleRate Float deriving (Eq, Ord, Read, Show)
 
 data MetricStoreKey = CounterKey   { ckMetric :: Counter   }
@@ -81,6 +80,7 @@ data Set = Set { setName :: ByteString, setTags :: Tags }
 
 data Event =
     Event { eventName      :: ByteString
+          , eventText      :: ByteString
           , eventTags      :: Tags
           , eventTimestamp :: Maybe UTCTime
           , eventHostname  :: Maybe ByteString
@@ -145,8 +145,17 @@ metricMapLookup = HashMap.lookup . metricStoreKey
 metricMapInsert :: Metric m => m -> MetricStore -> MetricMap -> MetricMap
 metricMapInsert = HashMap.insert . metricStoreKey
 
-newtype StatsTState = StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore } deriving (Eq, Read, Show)
+data NonMetricEvent = HistogramEvent Histogram MetricStore
+                    | SetEvent Set MetricStore
+                    | ServiceCheckEvent ServiceCheck
+                    | EventEvent Event
+                    deriving (Eq, Read, Show)
+
+data StatsTState =
+    StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore
+                , eventQueue :: [NonMetricEvent]
+                } deriving (Eq, Read, Show)
 
 mkStatsTEnv :: (MonadIO m, Monad m) => StatsTConfig -> m StatsTEnvironment
 mkStatsTEnv conf = liftIO $
-    StatsTEnvironment . (conf,) <$> newIORef (StatsTState HashMap.empty)
+    StatsTEnvironment . (conf,) <$> newIORef (StatsTState HashMap.empty [])

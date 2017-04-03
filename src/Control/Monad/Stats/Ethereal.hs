@@ -36,13 +36,14 @@ tick tag = tickBy tag 1
 
 tickBy :: (MonadIO m, MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
 tickBy tag n c = updSTS tag f
-    where f (StatsTState m) = StatsTState $ case metricMapLookup c m of
-            Nothing -> metricMapInsert c MetricStore{metricValue = n} m
-            Just (MetricStore n')  -> metricMapInsert c (MetricStore (n' + n)) m
+    where f (StatsTState m l) = StatsTState m' l
+            where m' = case metricMapLookup c m of
+                    Nothing -> metricMapInsert c MetricStore{metricValue = n} m
+                    Just (MetricStore n')  -> metricMapInsert c (MetricStore (n' + n)) m
 
 setRegularValue :: (MonadStats tag m, Metric m') => proxy tag -> Int -> m' -> m ()
 setRegularValue tag v c = updSTS tag f
-    where f (StatsTState m) = StatsTState $ metricMapInsert c (fromIntegral v) m
+    where f (StatsTState m l) = StatsTState (metricMapInsert c (fromIntegral v) m) l
 
 setCounter :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
 setCounter = setRegularValue

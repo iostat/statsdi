@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 module Control.Monad.Stats
     ( module Export
     , StatsT(..)
@@ -9,20 +12,26 @@ module Control.Monad.Stats
 import           Control.Concurrent
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
-import           Data.ByteString              (ByteString)
-import qualified Data.ByteString              as ByteString
-import qualified Data.ByteString.Char8        as Char8
-import           Data.HashMap.Strict          (HashMap)
-import qualified Data.HashMap.Strict          as HashMap
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Lift.Local
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as ByteString
+import qualified Data.ByteString.Char8          as Char8
+import           Data.HashMap.Strict            (HashMap)
+import qualified Data.HashMap.Strict            as HashMap
 import           Data.IORef
-import           Data.Time.Clock.POSIX        (getPOSIXTime)
-import qualified Network.Socket               as Socket hiding (recv, recvFrom,
-                                                         send, sendTo)
-import qualified Network.Socket.ByteString    as Socket
+import           Data.Time.Clock.POSIX          (getPOSIXTime)
+import qualified Network.Socket                 as Socket hiding (recv,
+                                                           recvFrom, send,
+                                                           sendTo)
+import qualified Network.Socket.ByteString      as Socket
 
-import           Control.Monad.Stats.Ethereal as Export
-import           Control.Monad.Stats.TH       as Export
-import           Control.Monad.Stats.Types    as Export
+import           Control.Monad.Stats.Ethereal   as Export
+import           Control.Monad.Stats.TH         as Export
+import           Control.Monad.Stats.Types      as Export
+
+
+import           Data.Proxy
 
 -- sample usage
 --
@@ -68,21 +77,25 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
           getMicrotime = (round . (* 1000000.0) . toDouble) `fmap` getPOSIXTime
               where toDouble = realToFrac :: Real a => a -> Double
 
-          getAndWipeStates :: IO [(MetricStoreKey, MetricStore)]
-          getAndWipeStates = atomicModifyIORef' state $ \(StatsTState x) ->
-                (StatsTState $ HashMap.map (const 0) x, HashMap.toList x)
+          getAndWipeStates :: IO ([(MetricStoreKey, MetricStore)], [NonMetricEvent])
+          getAndWipeStates = atomicModifyIORef' state $ \(StatsTState m l) ->
+                (StatsTState (HashMap.map (const 0) m) [], (HashMap.toList m, l))
 
           reportSamples :: Socket.Socket -> IO ()
-          reportSamples socket = getAndWipeStates >>= mapM_ reportSample
-              where reportSample :: (MetricStoreKey, MetricStore) -> IO ()
-                    reportSample (key, value) = void $ Socket.send socket message
-                        where message    = ByteString.concat [keyName key, ":", value', keyKind key, sampleRate, tagSep, allTags]
-                              value'     = Char8.pack (show value)
-                              sampleRate = if isHistogram key
-                                           then ByteString.concat ["|@", Char8.pack . show $ histogramSampleRate key]
-                                           else ""
-                              tagSep     = if ByteString.null allTags then "" else "|#"
-                              allTags    = ByteString.intercalate "," [defaultRenderedTags, renderTags (keyTags key)]
+          reportSamples socket = do
+                (samples, nonMetrics)<- getAndWipeStates
+                forM_ samples reportSample
+                forM_ nonMetrics reportNonMetric
+                where reportSample :: (MetricStoreKey, MetricStore) -> IO ()
+                      reportSample (key, value) = void $ Socket.send socket message
+                          where message    = ByteString.concat [keyName key, ":", value', keyKind key, sampleRate, tagSep, allTags]
+                                value'     = Char8.pack (show value)
+                                sampleRate = if isHistogram key
+                                             then ByteString.concat ["|@", Char8.pack . show $ histogramSampleRate key]
+                                             else ""
+                                tagSep     = if ByteString.null allTags then "" else "|#"
+                                allTags    = ByteString.intercalate "," [defaultRenderedTags, renderTags (keyTags key)]
+                      reportNonMetric = undefined
 
           defaultRenderedTags :: ByteString
           defaultRenderedTags = renderTags (defaultTags cfg)
@@ -93,7 +106,29 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
                     renderTag (k, v) = ByteString.concat [k, ":", v]
 
 
-newtype StatsT t m a = StatsT { _runStatsT :: ReaderT t StatsTEnvironment m a }
+data StatsT t m a = StatsT { _runStatsT :: ReaderT t StatsTEnvironment m a }
+    deriving (Functor)
+
+instance (Applicative m) => Applicative (StatsT t m) where
+    pure = pure
+    (<*>) = (<*>)
+
+instance (Monad m) => Monad (StatsT t m) where
+    return = return
+    (>>=) = (>>=)
+
+instance (Monad m, MonadIO m) => MonadIO (StatsT t m) where
+    liftIO = liftIO
+
+instance MonadTrans (StatsT t) where
+    lift = lift
+
+instance LiftLocal (StatsT t) where
+    liftLocal = liftLocal
+
+instance Monad m => MonadReader t StatsTEnvironment (StatsT t m) where
+    ask = ask
+    local = local
 
 runStatsT :: (Monad m, MonadIO m) => proxy t -> StatsTConfig -> StatsT t m a -> m a
 runStatsT t c m = do
@@ -103,3 +138,22 @@ runStatsT t c m = do
         ret <- _runStatsT m
         liftIO $ killThread tid
         return ret
+
+-- data MyTag = MyTag
+-- myTag :: Proxy MyTag
+-- myTag = Proxy
+--
+-- doATest :: IO ()
+-- doATest = runStatsT myTag conf . forever $ do
+--         tickBy myTag 15 ctr
+--         liftIO $ threadDelay 250
+--         tick myTag ctr
+--         liftIO $ threadDelay 500
+--     where conf = StatsTConfig { host          = "localhost"
+--                               , port          = 8125
+--                               , flushInterval = 1000
+--                               , prefix        = ""
+--                               , suffix        = ""
+--                               , defaultTags   = []
+--                               }
+--           ctr = Counter{ counterName="derp", counterTags = []}
