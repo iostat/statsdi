@@ -129,6 +129,15 @@ data StatsTConfig =
                  , defaultTags   :: !Tags
                  } deriving (Eq, Read, Show)
 
+defaultStatsTConfig :: StatsTConfig
+defaultStatsTConfig = StatsTConfig { host = "127.0.0.1"
+                                   , port = 8125
+                                   , flushInterval = 1000
+                                   , prefix = ""
+                                   , suffix = ""
+                                   , defaultTags = []
+                                   }
+
 newtype StatsTEnvironment = StatsTEnvironment (StatsTConfig, IORef StatsTState)
 
 envConfig :: StatsTEnvironment -> StatsTConfig
