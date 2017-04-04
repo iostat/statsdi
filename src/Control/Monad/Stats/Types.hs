@@ -65,19 +65,19 @@ keyKind (TimerKey m)     = "|ms"
 keyKind (HistogramKey m) = "|h"
 keyKind (SetKey m)       = "|s"
 
-data Counter = Counter { counterName :: ByteString, counterTags :: Tags }
+data Counter = Counter { counterName :: !ByteString, counterTags :: !Tags }
     deriving (Eq, Ord, Read, Show)
 
-data Gauge = Gauge { gaugeName :: ByteString, gaugeTags :: Tags }
+data Gauge = Gauge { gaugeName :: !ByteString, gaugeTags :: !Tags }
     deriving (Eq, Ord, Read, Show)
 
-data Timer = Timer { timerName :: ByteString, timerTags :: Tags }
+data Timer = Timer { timerName :: !ByteString, timerTags :: !Tags }
     deriving (Eq, Ord, Read, Show)
 
-data Histogram = Histogram { histogramName :: ByteString , histogramTags :: Tags, _histogramSampleRate :: SampleRate }
+data Histogram = Histogram { histogramName :: !ByteString , histogramTags :: !Tags, _histogramSampleRate :: !SampleRate }
     deriving (Eq, Ord, Read, Show)
 
-data Set = Set { setName :: ByteString, setTags :: Tags }
+data Set = Set { setName :: !ByteString, setTags :: !Tags }
     deriving (Eq, Ord, Read, Show)
 
 data Event =

@@ -1,5 +1,7 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TemplateHaskell       #-}
 
 import           Control.Concurrent
 import           Control.Monad.IO.Class
@@ -13,14 +15,11 @@ data MyTag = MyTag
 myTag :: Proxy MyTag
 myTag = Proxy
 
-myCtr :: Counter
-myCtr = Counter "hello.world" []
+defineCounter "ctr.hello.world" []
+defineCounter "ctr.bye.world" [("env","test")]
 
 ourStatsTConfig :: StatsTConfig
 ourStatsTConfig = defaultStatsTConfig { flushInterval = 500 }
-
-taggedCtr :: Counter
-taggedCtr = Counter "bye.world" [("sometag","testing")]
 
 main :: IO ()
 main = runSpec >> runMTLSpec
@@ -35,11 +34,11 @@ action :: (MonadStats MyTag m) => m ()
 action = do
     liftIO $ putStrLn ""
     liftIO $ putStrLn "action/tick"
-    tick myTag myCtr
+    tick myTag ctr_hello_world
     liftIO $ putStrLn "action/delay"
     -- liftIO $ threadDelay 200000
     liftIO $ putStrLn "action/tickBy"
-    tickBy myTag 10 taggedCtr
+    tickBy myTag 10 ctr_bye_world
     liftIO $ putStrLn "action/delayAgain"
     -- liftIO $ threadDelay 200000
     liftIO $ putStrLn "action/return"
@@ -48,11 +47,11 @@ mtlAction :: (MTLStats.MonadStats m) => m ()
 mtlAction = do
     liftIO $ putStrLn ""
     liftIO $ putStrLn "action/tick"
-    MTLStats.tick myCtr
+    MTLStats.tick ctr_hello_world
     liftIO $ putStrLn "action/delay"
     -- liftIO $ threadDelay 200000
     liftIO $ putStrLn "action/tickBy"
-    MTLStats.tickBy 10 taggedCtr
+    MTLStats.tickBy 10 ctr_bye_world
     liftIO $ putStrLn "action/delayAgain"
     -- liftIO $ threadDelay 2000000
     liftIO $ putStrLn "action/return"
