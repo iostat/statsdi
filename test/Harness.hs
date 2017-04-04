@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 module Harness
     ( runStatsTCapturingOutput
+    , runMTLStatsTCapturingOutput
     ) where
 
 import           Control.Concurrent
@@ -14,7 +15,7 @@ import           Data.Time.Clock.POSIX
 import           Network.Socket            hiding (recv)
 import           Network.Socket.ByteString (recv)
 
-import Debug.Trace (traceM)
+import qualified Control.Monad.Stats.MTL   as MTLStats
 
 tQueueToList :: TQueue a -> IO [a]
 tQueueToList = fmap reverse . loop []
@@ -52,5 +53,12 @@ runStatsTCapturingOutput :: (MonadIO m) => proxy t -> StatsT t m a -> StatsTConf
 runStatsTCapturingOutput p m c lingerTime = do
     var <- liftIO $ forkAndListen c lingerTime
     ret <- runStatsT p m c
+    val <- liftIO $ atomically (takeTMVar var)
+    return (val, ret)
+
+runMTLStatsTCapturingOutput :: (MonadIO m) => MTLStats.StatsT m a -> StatsTConfig -> Int -> m ([ByteString], a)
+runMTLStatsTCapturingOutput m c lingerTime = do
+    var <- liftIO $ forkAndListen c lingerTime
+    ret <- MTLStats.runStatsT m c
     val <- liftIO $ atomically (takeTMVar var)
     return (val, ret)

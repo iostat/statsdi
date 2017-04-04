@@ -19,6 +19,7 @@ library
                      , Control.Monad.Stats.Ethereal
                      , Control.Monad.Stats.TH
                      , Control.Monad.Stats.Types
+                     , Control.Monad.Stats.MTL
   build-depends:       base >= 4.7 && < 5
                      , network
                      , time

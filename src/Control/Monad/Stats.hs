@@ -81,7 +81,7 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
 
           getAndWipeStates :: IO ([(MetricStoreKey, MetricStore)], [NonMetricEvent])
           getAndWipeStates = atomicModifyIORef' state $ \(StatsTState m l) ->
-                (StatsTState (HashMap.map (const 0) m) [], (HashMap.toList m, l))
+                (StatsTState HashMap.empty [], (HashMap.toList m, l))
 
           reportSamples :: Socket.Socket -> IO ()
           reportSamples socket = do
