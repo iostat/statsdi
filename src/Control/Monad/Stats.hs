@@ -9,7 +9,9 @@ module Control.Monad.Stats
     ) where
 
 import           Control.Concurrent
-import           Control.Exception (fromException, AsyncException(..))
+import           Control.Concurrent.STM
+import           Control.Exception              (AsyncException (..),
+                                                 fromException)
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
@@ -50,44 +52,55 @@ import           Data.Proxy
 --   done <- liftIO getTime
 --   time (done - start) vm_run_loop
 
-forkStatsThread :: (MonadIO m, Monad m) => StatsTEnvironment -> m ThreadId
-forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
-    addrInfos <- Socket.getAddrInfo Nothing (Just $ host cfg) (Just . show $ port cfg)
-    socket <- case addrInfos of
+borrowTMVar :: (Show a, Show b, Monad m, MonadIO m) => TMVar a -> (a -> m b) -> m b
+borrowTMVar tmvar m = do
+    var <- liftIO . atomically $ takeTMVar tmvar
+    v   <- m var
+    liftIO . atomically $ putTMVar tmvar var
+    return v
+
+
+mkStatsDSocket :: (MonadIO m, Monad m) => StatsTConfig -> m (TMVar Socket.Socket, Socket.SockAddr)
+mkStatsDSocket cfg = do
+    addrInfos <- liftIO $ Socket.getAddrInfo Nothing (Just $ host cfg) (Just . show $ port cfg)
+    case addrInfos of
         []    -> error $ "Unsupported address: " ++ host cfg ++ ":" ++ show (port cfg)
-        (a:_) -> do
-            sock <- Socket.socket (Socket.addrFamily a) Socket.Datagram Socket.defaultProtocol
-            Socket.connect sock (Socket.addrAddress a)
-            return sock
+        (a:_) -> liftIO $ do
+         sock <- Socket.socket (Socket.addrFamily a) Socket.Datagram Socket.defaultProtocol
+         tmv <- atomically (newTMVar sock)
+         return (tmv, Socket.addrAddress a)
+
+
+forkStatsThread :: (MonadIO m, Monad m) => StatsTEnvironment -> m ThreadId
+forkStatsThread (StatsTEnvironment (cfg, socket, state)) = liftIO $ do
     me <- myThreadId
     forkFinally (loop socket) $ \e -> do
-        Socket.close socket
+        borrowTMVar socket Socket.close
         case e of
             Left e -> case (fromException e :: Maybe AsyncException) of
                 Just ThreadKilled -> return ()
-                _ -> throwTo me e
+                _                 -> throwTo me e
             Right () -> return ()
     where loop socket = do
               let interval = flushInterval cfg
               start <- getMicrotime
-              reportSamples socket
+              borrowTMVar socket reportSamples
               end   <- getMicrotime
               threadDelay (interval * 1000 - fromIntegral (end - start))
               loop socket
 
-          getMicrotime :: IO Int
-          getMicrotime = (round . (* 1000000.0) . toDouble) <$> getPOSIXTime
+          getMicrotime :: (MonadIO m) => m Int
+          getMicrotime = (round . (* 1000000.0) . toDouble) <$> liftIO getPOSIXTime
               where toDouble = realToFrac :: Real a => a -> Double
 
-          getAndWipeStates :: IO ([(MetricStoreKey, MetricStore)], [NonMetricEvent])
-          getAndWipeStates = atomicModifyIORef' state $ \(StatsTState m l) ->
-                (StatsTState HashMap.empty [], (HashMap.toList m, l))
+          getAndWipeStates :: (MonadIO m) => m [(MetricStoreKey, MetricStore)]
+          getAndWipeStates = liftIO . atomicModifyIORef' state $ \(StatsTState m) ->
+                (StatsTState HashMap.empty, HashMap.toList m)
 
           reportSamples :: Socket.Socket -> IO ()
           reportSamples socket = do
-                (samples, nonMetrics) <- getAndWipeStates
+                samples <- getAndWipeStates
                 forM_ samples reportSample
-                forM_ nonMetrics reportNonMetric
                 where reportSample :: (MetricStoreKey, MetricStore) -> IO ()
                       reportSample (key, value) = void $ Socket.send socket message
                           where message    = ByteString.concat [keyName key, ":", value', keyKind key, sampleRate, tagSep, allTags]
@@ -103,7 +116,6 @@ forkStatsThread (StatsTEnvironment (cfg, state)) = liftIO $ do
                                           mybOwnTags = case renderTags (keyTags key) of
                                             "" -> []
                                             x  -> [x]
-                      reportNonMetric = undefined
 
           defaultRenderedTags :: ByteString
           defaultRenderedTags = renderTags (defaultTags cfg)
@@ -118,7 +130,9 @@ type StatsT t m a = ReaderT t StatsTEnvironment m a
 
 runStatsT :: (Monad m, MonadIO m) => proxy t -> StatsT t m a -> StatsTConfig -> m a
 runStatsT t m c = do
-    theEnv <- mkStatsTEnv c
+    (socket, addr) <- mkStatsDSocket c
+    liftIO $ borrowTMVar socket (`Socket.connect` addr)
+    theEnv <- mkStatsTEnv c socket
     flip (runReaderT t) theEnv $ do
         tid <- forkStatsThread theEnv
         ret <- m

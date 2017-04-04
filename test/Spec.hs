@@ -17,7 +17,7 @@ myCtr :: Counter
 myCtr = Counter "hello.world" []
 
 ourStatsTConfig :: StatsTConfig
-ourStatsTConfig = defaultStatsTConfig { flushInterval = 250 }
+ourStatsTConfig = defaultStatsTConfig { flushInterval = 500 }
 
 taggedCtr :: Counter
 taggedCtr = Counter "bye.world" [("sometag","testing")]
@@ -41,7 +41,7 @@ action = do
     liftIO $ putStrLn "action/tickBy"
     tickBy myTag 10 taggedCtr
     liftIO $ putStrLn "action/delayAgain"
-    liftIO $ threadDelay 1000000
+    liftIO $ threadDelay 2000000
     liftIO $ putStrLn "action/return"
 
 mtlAction :: (MTLStats.MonadStats m) => m ()
@@ -54,5 +54,5 @@ mtlAction = do
     liftIO $ putStrLn "action/tickBy"
     MTLStats.tickBy 10 taggedCtr
     liftIO $ putStrLn "action/delayAgain"
-    liftIO $ threadDelay 500000
+    liftIO $ threadDelay 2000000
     liftIO $ putStrLn "action/return"

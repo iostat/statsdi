@@ -4,6 +4,7 @@
 {-# LANGUAGE TupleSections              #-}
 module Control.Monad.Stats.Types where
 
+import           Control.Concurrent.STM (TMVar)
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Data.ByteString        (ByteString)
@@ -14,6 +15,7 @@ import           Data.HashMap.Strict    (HashMap)
 import qualified Data.HashMap.Strict    as HashMap
 import           Data.IORef
 import           Data.Time.Clock        (UTCTime)
+import           Network.Socket         (Socket)
 
 type Tag  = (ByteString, ByteString)
 type Tags = [Tag]
@@ -138,13 +140,16 @@ defaultStatsTConfig = StatsTConfig { host = "127.0.0.1"
                                    , defaultTags = []
                                    }
 
-newtype StatsTEnvironment = StatsTEnvironment (StatsTConfig, IORef StatsTState)
+newtype StatsTEnvironment = StatsTEnvironment (StatsTConfig, TMVar Socket, IORef StatsTState)
 
 envConfig :: StatsTEnvironment -> StatsTConfig
-envConfig (StatsTEnvironment (a, _)) = a
+envConfig (StatsTEnvironment (a, _, _)) = a
+
+envSocket :: StatsTEnvironment -> TMVar Socket
+envSocket (StatsTEnvironment (_, b, _)) = b
 
 envState :: StatsTEnvironment -> IORef StatsTState
-envState (StatsTEnvironment (_, b)) = b
+envState (StatsTEnvironment (_, _, c)) = c
 
 type MetricMap = HashMap MetricStoreKey MetricStore
 
@@ -161,10 +166,8 @@ data NonMetricEvent = HistogramEvent Histogram MetricStore
                     deriving (Eq, Read, Show)
 
 data StatsTState =
-    StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore
-                , eventQueue :: [NonMetricEvent]
-                } deriving (Eq, Read, Show)
+    StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore } deriving (Eq, Read, Show)
 
-mkStatsTEnv :: (MonadIO m, Monad m) => StatsTConfig -> m StatsTEnvironment
-mkStatsTEnv conf = liftIO $
-    StatsTEnvironment . (conf,) <$> newIORef (StatsTState HashMap.empty [])
+mkStatsTEnv :: (MonadIO m, Monad m) => StatsTConfig -> TMVar Socket -> m StatsTEnvironment
+mkStatsTEnv conf socket = liftIO $
+    StatsTEnvironment . (conf,socket,) <$> newIORef (StatsTState HashMap.empty)
