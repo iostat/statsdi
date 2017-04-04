@@ -37,11 +37,11 @@ action = do
     liftIO $ putStrLn "action/tick"
     tick myTag myCtr
     liftIO $ putStrLn "action/delay"
-    liftIO $ threadDelay 2000000
+    -- liftIO $ threadDelay 200000
     liftIO $ putStrLn "action/tickBy"
     tickBy myTag 10 taggedCtr
     liftIO $ putStrLn "action/delayAgain"
-    liftIO $ threadDelay 2000000
+    -- liftIO $ threadDelay 200000
     liftIO $ putStrLn "action/return"
 
 mtlAction :: (MTLStats.MonadStats m) => m ()
@@ -50,9 +50,9 @@ mtlAction = do
     liftIO $ putStrLn "action/tick"
     MTLStats.tick myCtr
     liftIO $ putStrLn "action/delay"
-    liftIO $ threadDelay 2000000
+    -- liftIO $ threadDelay 200000
     liftIO $ putStrLn "action/tickBy"
     MTLStats.tickBy 10 taggedCtr
     liftIO $ putStrLn "action/delayAgain"
-    liftIO $ threadDelay 2000000
+    -- liftIO $ threadDelay 2000000
     liftIO $ putStrLn "action/return"

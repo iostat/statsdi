@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Control.Monad.Stats.Ethereal
     ( MonadStats
+    , borrowTMVar
     , tick
     , tickBy
     , setCounter
@@ -13,14 +14,26 @@ module Control.Monad.Stats.Ethereal
     , reportServiceCheck
     ) where
 
+import           Control.Concurrent.STM
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Control.Monad.Stats.Types
 import           Data.HashMap.Strict       (HashMap)
 import           Data.IORef
 import           Data.Time                 (NominalDiffTime)
+import           Network.Socket
 
 type MonadStats t m = (Monad m, MonadIO m, MonadReader t StatsTEnvironment m)
+
+borrowTMVar :: (Monad m, MonadIO m) => TMVar a -> (a -> m b) -> m b
+borrowTMVar tmvar m = do
+    var <- liftIO . atomically $ takeTMVar tmvar
+    v   <- m var
+    liftIO . atomically $ putTMVar tmvar var
+    return v
+
+borrowSocket :: (MonadIO m, MonadStats tag m) => proxy tag -> (Socket -> m b) -> m b
+borrowSocket tag m = asks tag envSocket >>= flip borrowTMVar m
 
 getSTS :: (MonadIO m, MonadStats tag m) => proxy tag -> m StatsTState
 getSTS tag = asks tag envState >>= liftIO . readIORef
