@@ -57,12 +57,13 @@ forkAndListen cfg = do
 
 runStatsTCapturingOutput :: (MonadIO m) => StatsTConfig -> Int -> StatsT m a ->  m ([ByteString], a)
 runStatsTCapturingOutput c lingerTime m = do
-    _ <- liftIO . atomically $ takeTMVar harnessLock
-    (tid, var) <- liftIO $ forkAndListen c
+    (tid, var)  <- liftIO $ do
+        atomically $ takeTMVar harnessLock
+        forkAndListen c
     ret <- runStatsT m c
     liftIO $ do
         threadDelay $ lingerTime * 1000
-        liftIO $ killThread tid
-    val <- liftIO $ atomically (takeTMVar var)
-    _ <- liftIO $ atomically (putTMVar harnessLock 0)
-    return (val, ret)
+        killThread tid
+        val <- atomically (takeTMVar var)
+        atomically (putTMVar harnessLock 0)
+        return (val, ret)
