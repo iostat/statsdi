@@ -4,17 +4,23 @@
 {-# LANGUAGE TemplateHaskell       #-}
 
 import           Control.Concurrent
+import           Control.Monad
 import           Control.Monad.IO.Class
-import           Control.Monad.Stats
-import qualified Control.Monad.Stats.MTL as MTLStats
+import           Control.Monad.Stats.MTL
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as ByteString
 import           Data.Proxy
 
 import           Harness
 
-data MyTag = MyTag
-myTag :: Proxy MyTag
-myTag = Proxy
+import           Test.Hspec
+import           Test.Tasty
+import           Test.Tasty.Hspec
+import           Test.Tasty.Options      (OptionDescription (..))
+import           Test.Tasty.Runners      (NumThreads (..))
 
+-- these tests effectively test the TH for sanity
+-- otherwise the test suite wouldnt even compile
 defineCounter "ctr.hello.world" []
 defineCounter "ctr.bye.world" [("env","test")]
 defineGauge "gau.testing.things" []
@@ -23,39 +29,66 @@ defineHistogram "hist.stuff.things" [] 1.0
 defineSet "set.of.people" []
 
 ourStatsTConfig :: StatsTConfig
-ourStatsTConfig = defaultStatsTConfig { flushInterval = 500 }
+ourStatsTConfig = defaultStatsTConfig { flushInterval = 250 }
+
+st :: (Monad m, MonadIO m) => Int -> StatsT m a -> m ([ByteString], a)
+st = runStatsTCapturingOutput ourStatsTConfig
+
+sleepMs :: MonadIO m => Int -> m ()
+sleepMs = liftIO . threadDelay . (1000 *)
 
 main :: IO ()
-main = runSpec >> runMTLSpec
+main = do
+    putStrLn ""
+    let toRun = [sillyTests, counterTests, gaugeTests]
+    forM toRun testSpecs >>= defaultMain . withTests
 
-runSpec :: IO ()
-runSpec = print =<< runStatsTCapturingOutput myTag action ourStatsTConfig 5000
+withTests :: [[TestTree]] -> TestTree
+withTests = testGroup "Statsdi" . concat
 
-runMTLSpec :: IO ()
-runMTLSpec = print =<< runMTLStatsTCapturingOutput mtlAction ourStatsTConfig 5000
+sillyTests :: Spec
+sillyTests = describe "The test harness" $ do
+    it "should run and capture something (1s linger)" $ do
+        (capture, _) <- st 1000 $ tick ctr_hello_world
+        capture `shouldSatisfy` (not . null)
 
-action :: (MonadStats MyTag m) => m ()
-action = do
-    liftIO $ putStrLn ""
-    liftIO $ putStrLn "action/tick"
-    tick myTag ctr_hello_world
-    liftIO $ putStrLn "action/delay"
-    -- liftIO $ threadDelay 200000
-    liftIO $ putStrLn "action/tickBy"
-    tickBy myTag 10 ctr_bye_world
-    liftIO $ putStrLn "action/delayAgain"
-    -- liftIO $ threadDelay 200000
-    liftIO $ putStrLn "action/return"
+    it "should run and capture with a delay before the tick (250ms flushInterval / 1s linger / 500ms delay)" $ do
+        (capture, _) <- st 1000 $ do
+            sleepMs 500
+            tick ctr_hello_world
+        capture `shouldSatisfy` (not . null)
 
-mtlAction :: (MTLStats.MonadStats m) => m ()
-mtlAction = do
-    liftIO $ putStrLn ""
-    liftIO $ putStrLn "action/tick"
-    MTLStats.tick ctr_hello_world
-    liftIO $ putStrLn "action/delay"
-    -- liftIO $ threadDelay 200000
-    liftIO $ putStrLn "action/tickBy"
-    MTLStats.tickBy 10 ctr_bye_world
-    liftIO $ putStrLn "action/delayAgain"
-    -- liftIO $ threadDelay 2000000
-    liftIO $ putStrLn "action/return"
+    it "should linger after the test runs and get everything (100ms linger / 5000ms+ test)" $ do
+        (capture, _) <- st 100 $ do
+            sleepMs 5000
+            tick ctr_hello_world
+        capture `shouldSatisfy` (not . null)
+
+counterTests :: Spec
+counterTests = describe "A Counter" $ do
+    it "should have a suffix type of |c" $ do
+        (capture, _) <- st 1000 $ setCounter 0 ctr_hello_world
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "ctr.hello.world:0|c" . head)
+
+    it "should increment by one when calling `tick`" $ do
+        (capture, _) <- st 1000 $ tick ctr_hello_world
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "ctr.hello.world:1|c" . head)
+
+    it "should send a multi-event with a zeroing-out before being set to a negative number" $ do
+        (capture, _) <- st 1000 $ setCounter (-20) ctr_hello_world
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "ctr.hello.world:0|c\nctr.hello.world:-20|c" . head)
+
+gaugeTests :: Spec
+gaugeTests = describe "A Gauge" $ do
+    it "should have a suffix type of |g" $ do
+        (capture, _) <- st 1000 $ setGauge 0 gau_testing_things
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "gau.testing.things:0|g" . head)
+
+    it "should send a multi-event with a zeroing-out before being set to a negative number" $ do
+        (capture, _) <- st 1000 $ setGauge (-20) gau_testing_things
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "gau.testing.things:0|g\ngau.testing.things:-20|g" . head)

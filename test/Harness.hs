@@ -1,21 +1,24 @@
 {-# LANGUAGE LambdaCase #-}
 module Harness
     ( runStatsTCapturingOutput
-    , runMTLStatsTCapturingOutput
     ) where
 
 import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Monad
-import           Control.Monad.Stats
 import           Control.Monad.IO.Class
+import           Control.Monad.Stats.MTL
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as ByteString
 import           Data.Time.Clock.POSIX
 import           Network.Socket            hiding (recv)
 import           Network.Socket.ByteString (recv)
 
-import qualified Control.Monad.Stats.MTL   as MTLStats
+import           System.IO.Unsafe          (unsafePerformIO)
+
+harnessLock :: TMVar Int
+harnessLock = unsafePerformIO $ newTMVarIO 0
+{-# NOINLINE harnessLock #-}
 
 tQueueToList :: TQueue a -> IO [a]
 tQueueToList = fmap reverse . loop []
@@ -23,42 +26,43 @@ tQueueToList = fmap reverse . loop []
                 Nothing -> return read
                 Just x  -> loop (x:read) q
 
-listenForUDP :: StatsTConfig -> Int -> IO [ByteString]
-listenForUDP cfg lingerTime = withSocketsDo $ do
-    addrInfos <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) (Just (host cfg)) (Just . show $ port cfg)
-    sock <- case addrInfos of
+listenForUDP :: (MonadIO m) => StatsTConfig -> TMVar [ByteString] -> m ThreadId
+listenForUDP cfg var = liftIO . withSocketsDo $ do
+    sock <- getAddrInfo opts' host' port' >>= \case
           []    -> error $ "Unsupported address: " ++ host cfg ++ ":" ++ show (port cfg)
           (a:_) -> do
               socket' <- socket (addrFamily a) Datagram defaultProtocol
+              setSocketOption socket' ReuseAddr 1
+              setSocketOption socket' ReusePort 1
               bind socket' (addrAddress a)
               return socket'
     queue <- newTQueueIO
-    tid <- forkFinally (udpLoop sock queue) (const $ close sock)
-    threadDelay $ lingerTime * 1000
-    killThread tid
-
-    tQueueToList queue
+    forkFinally (udpLoop sock queue) . const $ do
+        close sock
+        atomically . putTMVar var =<< tQueueToList queue
 
     where udpLoop :: Socket -> TQueue ByteString -> IO ()
           udpLoop sock queue =
-              recv sock 1024 >>= atomically . writeTQueue queue >> udpLoop sock queue
+              recv sock 10240 >>= atomically . writeTQueue queue >> udpLoop sock queue
 
-forkAndListen :: StatsTConfig -> Int -> IO (TMVar [ByteString])
-forkAndListen cfg lingerTime = do
+          opts' = Just $ defaultHints { addrFlags = [AI_PASSIVE] }
+          host' = Just $ host cfg
+          port' = Just . show $ port cfg
+
+forkAndListen :: StatsTConfig -> IO (ThreadId, TMVar [ByteString])
+forkAndListen cfg = do
     var <- newEmptyTMVarIO
-    void . forkIO $ listenForUDP cfg lingerTime >>= atomically . putTMVar var
-    return var
+    tid <- listenForUDP cfg var
+    return (tid, var)
 
-runStatsTCapturingOutput :: (MonadIO m) => proxy t -> StatsT t m a -> StatsTConfig -> Int -> m ([ByteString], a)
-runStatsTCapturingOutput p m c lingerTime = do
-    var <- liftIO $ forkAndListen c lingerTime
-    ret <- runStatsT p m c
+runStatsTCapturingOutput :: (MonadIO m) => StatsTConfig -> Int -> StatsT m a ->  m ([ByteString], a)
+runStatsTCapturingOutput c lingerTime m = do
+    _ <- liftIO . atomically $ takeTMVar harnessLock
+    (tid, var) <- liftIO $ forkAndListen c
+    ret <- runStatsT m c
+    liftIO $ do
+        threadDelay $ lingerTime * 1000
+        liftIO $ killThread tid
     val <- liftIO $ atomically (takeTMVar var)
-    return (val, ret)
-
-runMTLStatsTCapturingOutput :: (MonadIO m) => MTLStats.StatsT m a -> StatsTConfig -> Int -> m ([ByteString], a)
-runMTLStatsTCapturingOutput m c lingerTime = do
-    var <- liftIO $ forkAndListen c lingerTime
-    ret <- MTLStats.runStatsT m c
-    val <- liftIO $ atomically (takeTMVar var)
+    _ <- liftIO $ atomically (putTMVar harnessLock 0)
     return (val, ret)

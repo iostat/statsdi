@@ -63,9 +63,10 @@ setCounter = setRegularValue
 setGauge :: (MonadStats tag m) => proxy tag -> Int -> Gauge -> m ()
 setGauge = setRegularValue
 
-time :: (MonadStats tag m) => proxy tag -> NominalDiffTime -> Timer -> m ()
-time tag t = setRegularValue tag v
-    where v = 12345
+time :: (Real n, Fractional n, MonadStats tag m) => proxy tag -> n -> Timer -> m ()
+time tag = setRegularValue tag . v
+    where v = round . (* 1000.0) . toDouble
+          toDouble = realToFrac :: (Real n, Fractional n) => n -> Double
 sample  :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
 sample = setRegularValue
 

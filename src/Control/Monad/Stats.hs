@@ -55,13 +55,18 @@ import           Data.Proxy
 
 mkStatsDSocket :: (MonadIO m, Monad m) => StatsTConfig -> m (TMVar Socket.Socket, Socket.SockAddr)
 mkStatsDSocket cfg = do
-    addrInfos <- liftIO $ Socket.getAddrInfo Nothing (Just $ host cfg) (Just . show $ port cfg)
+    addrInfos <- liftIO $ Socket.getAddrInfo opts' host' port'
     case addrInfos of
         []    -> error $ "Unsupported address: " ++ host cfg ++ ":" ++ show (port cfg)
         (a:_) -> liftIO $ do
          sock <- Socket.socket (Socket.addrFamily a) Socket.Datagram Socket.defaultProtocol
          tmv <- atomically (newTMVar sock)
          return (tmv, Socket.addrAddress a)
+
+    where host' = Just $ host cfg
+          port' = Just . show $ port cfg
+          opts' = Nothing
+
 
 
 forkStatsThread :: (MonadIO m, Monad m) => StatsTEnvironment -> m ThreadId
@@ -95,9 +100,19 @@ reportSamples (StatsTEnvironment (cfg, socket, state)) = do
         liftIO $ forM_ queuedEvents (Socket.send sock)
 
     where reportSample :: (MonadIO m) => Socket.Socket -> (MetricStoreKey, MetricStore) -> m ()
-          reportSample sock (key, value) = void . liftIO $ Socket.send sock message
-              where message    = ByteString.concat [keyName key, ":", value', keyKind key, sampleRate, tagSep, allTags]
-                    value'     = Char8.pack . show $ metricValue value
+          reportSample sock (key, MetricStore value) = void . liftIO $ Socket.send sock message
+              where message    = if value < 0
+                                 then ByteString.concat [messageWithValue 0, "\n", messageWithValue value]
+                                 else messageWithValue value
+
+                    messageWithValue v = ByteString.concat [ keyName key, ":"
+                                                           , Char8.pack (show v)
+                                                           , keyKind key
+                                                           , sampleRate
+                                                           , tagSep
+                                                           , allTags
+                                                           ]
+                    value'     = Char8.pack (show value)
                     sampleRate = if isHistogram key
                                  then ByteString.concat ["|@", Char8.pack . show $ histogramSampleRate key]
                                  else ""
