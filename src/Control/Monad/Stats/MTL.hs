@@ -27,16 +27,16 @@ import qualified Control.Monad.Stats       as Ethereal
 
 ethereal "MTLStatsT" "mtlStatsT"
 
-type MonadStats m = Ethereal.MonadStats MTLStatsT m
+type MonadStats m = (Monad m, MonadIO m, Ethereal.MonadStats MTLStatsT m)
 type StatsT m a = Ethereal.StatsT MTLStatsT m a
 
 runStatsT :: (MonadIO m, Monad m) => StatsT m a -> StatsTConfig -> m a
 runStatsT = Ethereal.runStatsT mtlStatsT
 
-tick :: (MonadIO m, MonadStats m) => Counter -> m ()
+tick :: (MonadStats m) => Counter -> m ()
 tick = Ethereal.tick mtlStatsT
 
-tickBy :: (MonadIO m, MonadStats m) => Int -> Counter -> m ()
+tickBy :: (MonadStats m) => Int -> Counter -> m ()
 tickBy = Ethereal.tickBy mtlStatsT
 
 setCounter :: (MonadStats m) => Int -> Counter -> m ()

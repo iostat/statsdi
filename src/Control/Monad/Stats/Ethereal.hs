@@ -35,19 +35,19 @@ borrowTMVar tmvar m = do
 borrowSocket :: (MonadIO m, MonadStats tag m) => proxy tag -> (Socket -> m b) -> m b
 borrowSocket tag m = asks tag envSocket >>= flip borrowTMVar m
 
-getSTS :: (MonadIO m, MonadStats tag m) => proxy tag -> m StatsTState
+getSTS :: (MonadStats tag m) => proxy tag -> m StatsTState
 getSTS tag = asks tag envState >>= liftIO . readIORef
 
-setSTS :: (MonadIO m, MonadStats tag m) => proxy tag -> StatsTState -> m ()
+setSTS :: (MonadStats tag m) => proxy tag -> StatsTState -> m ()
 setSTS tag state = asks tag envState >>= liftIO . flip atomicWriteIORef state
 
-updSTS :: (MonadIO m, MonadStats tag m) => proxy tag -> (StatsTState -> StatsTState) -> m ()
+updSTS :: (MonadStats tag m) => proxy tag -> (StatsTState -> StatsTState) -> m ()
 updSTS tag f = asks tag envState >>= liftIO . flip atomicModifyIORef' (\x -> (f x, ()))
 
-tick :: (MonadIO m, MonadStats tag m) => proxy tag -> Counter -> m ()
+tick :: (MonadStats tag m) => proxy tag -> Counter -> m ()
 tick tag = tickBy tag 1
 
-tickBy :: (MonadIO m, MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
+tickBy :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
 tickBy tag n c = updSTS tag f
     where f (StatsTState m q) = flip StatsTState q $ case metricMapLookup c m of
                     Nothing -> metricMapInsert c MetricStore{metricValue = n} m
