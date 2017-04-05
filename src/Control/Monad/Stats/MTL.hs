@@ -15,6 +15,7 @@ module Control.Monad.Stats.MTL
     , sample
     , reportEvent
     , reportServiceCheck
+    , MTLStatsT, mtlStatsT
     ) where
 
 import           Control.Monad.Ether
