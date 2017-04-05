@@ -22,7 +22,7 @@ import           Test.Tasty.Runners      (NumThreads (..))
 -- these tests effectively test the TH for sanity
 -- otherwise the test suite wouldnt even compile
 defineCounter "ctr.hello.world" []
-defineCounter "ctr.bye.world" [("env","test")]
+defineCounter "ctr.tagged" [("env","test")]
 defineGauge "gau.testing.things" []
 defineTimer "time.to.end.of.earth" []
 defineHistogram "hist.stuff.things" [] 1.0
@@ -31,8 +31,11 @@ defineSet "set.of.people" []
 ourStatsTConfig :: StatsTConfig
 ourStatsTConfig = defaultStatsTConfig { flushInterval = 250 }
 
-st :: (Monad m, MonadIO m) => Int -> StatsT m a -> m ([ByteString], a)
-st = runStatsTCapturingOutput ourStatsTConfig
+st :: (MonadIO m) => Int -> StatsT m a -> m ([ByteString], a)
+st = st' ourStatsTConfig
+
+st' :: (MonadIO m) => StatsTConfig -> Int -> StatsT m a -> m ([ByteString], a)
+st' = runStatsTCapturingOutput
 
 sleepMs :: MonadIO m => Int -> m ()
 sleepMs = liftIO . threadDelay . (1000 *)
