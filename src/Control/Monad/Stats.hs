@@ -32,6 +32,7 @@ import qualified Network.Socket.ByteString      as Socket
 import           Control.Monad.Stats.Ethereal   as Export
 import           Control.Monad.Stats.TH         as Export
 import           Control.Monad.Stats.Types      as Export
+import           Control.Monad.Stats.Util       as Export
 
 
 import           Data.Proxy
@@ -67,8 +68,6 @@ mkStatsDSocket cfg = do
           port' = Just . show $ port cfg
           opts' = Nothing
 
-
-
 forkStatsThread :: (MonadIO m, Monad m) => StatsTEnvironment -> m ThreadId
 forkStatsThread env@(StatsTEnvironment (cfg, socket, state)) = do
     me <- liftIO myThreadId
@@ -87,10 +86,6 @@ forkStatsThread env@(StatsTEnvironment (cfg, socket, state)) = do
               reportSamples env
               end   <- getMicrotime
               threadDelay (interval * 1000 - fromIntegral (end - start))
-
-          getMicrotime :: (MonadIO m) => m Int
-          getMicrotime = (round . (* 1000000.0) . toDouble) <$> liftIO getPOSIXTime
-              where toDouble = realToFrac :: Real a => a -> Double
 
 reportSamples :: MonadIO m => StatsTEnvironment -> m ()
 reportSamples (StatsTEnvironment (cfg, socket, state)) = do

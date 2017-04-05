@@ -18,6 +18,10 @@ import           Control.Concurrent.STM
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Control.Monad.Stats.Types
+import           Control.Monad.Stats.Util
+import           Data.ByteString           (ByteString)
+import           Data.ByteString           as ByteString
+import           Data.Dequeue
 import           Data.HashMap.Strict       (HashMap)
 import           Data.IORef
 import           Data.Time                 (NominalDiffTime)
@@ -57,6 +61,10 @@ setRegularValue :: (MonadStats tag m, Metric m') => proxy tag -> Int -> m' -> m 
 setRegularValue tag v c = updSTS tag f
     where f (StatsTState m q) = StatsTState (metricMapInsert c (fromIntegral v) m) q
 
+enqueueNonMetric :: (MonadStats tag m) => proxy tag -> ByteString -> m ()
+enqueueNonMetric tag e = updSTS tag f
+    where f (StatsTState m q) = StatsTState m (pushBack q e)
+
 setCounter :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
 setCounter = setRegularValue
 
@@ -66,7 +74,7 @@ setGauge = setRegularValue
 time :: (Real n, Fractional n, MonadStats tag m) => proxy tag -> n -> Timer -> m ()
 time tag = setRegularValue tag . v
     where v = round . (* 1000.0) . toDouble
-          toDouble = realToFrac :: (Real n, Fractional n) => n -> Double
+
 sample  :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
 sample = setRegularValue
 

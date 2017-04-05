@@ -9,7 +9,10 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Stats.MTL
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as ByteString
+import qualified Data.ByteString.Char8   as Char8
+import           Data.Char               (isNumber)
 import           Data.Proxy
+import           Data.Time.Clock.POSIX
 
 import           Harness
 
@@ -19,12 +22,14 @@ import           Test.Tasty.Hspec
 import           Test.Tasty.Options      (OptionDescription (..))
 import           Test.Tasty.Runners      (NumThreads (..))
 
+import Debug.Trace (traceShowId)
+
 -- these tests effectively test the TH for sanity
 -- otherwise the test suite wouldnt even compile
 defineCounter "ctr.hello.world" []
 defineCounter "ctr.tagged" [("env","test")]
 defineGauge "gau.testing.things" []
-defineTimer "time.to.end.of.earth" []
+defineTimer "time.test" []
 defineHistogram "hist.stuff.things" [] 1.0
 defineSet "set.of.people" []
 
@@ -43,7 +48,7 @@ sleepMs = liftIO . threadDelay . (1000 *)
 main :: IO ()
 main = do
     putStrLn ""
-    let toRun = [sillyTests, counterTests, gaugeTests]
+    let toRun = [sillyTests, counterTests, gaugeTests, timerTests]
     forM toRun testSpecs >>= defaultMain . withTests
 
 withTests :: [[TestTree]] -> TestTree
@@ -69,7 +74,7 @@ sillyTests = describe "The test harness" $ do
 
 counterTests :: Spec
 counterTests = describe "A Counter" $ do
-    it "should have a suffix type of |c" $ do
+    it "should have a kind tag of |c" $ do
         (capture, _) <- st 1000 $ setCounter 0 ctr_hello_world
         capture `shouldSatisfy` (not . null)
         capture `shouldSatisfy` (ByteString.isPrefixOf "ctr.hello.world:0|c" . head)
@@ -86,7 +91,7 @@ counterTests = describe "A Counter" $ do
 
 gaugeTests :: Spec
 gaugeTests = describe "A Gauge" $ do
-    it "should have a suffix type of |g" $ do
+    it "should have a kind tag of |g" $ do
         (capture, _) <- st 1000 $ setGauge 0 gau_testing_things
         capture `shouldSatisfy` (not . null)
         capture `shouldSatisfy` (ByteString.isPrefixOf "gau.testing.things:0|g" . head)
@@ -95,3 +100,30 @@ gaugeTests = describe "A Gauge" $ do
         (capture, _) <- st 1000 $ setGauge (-20) gau_testing_things
         capture `shouldSatisfy` (not . null)
         capture `shouldSatisfy` (ByteString.isPrefixOf "gau.testing.things:0|g\ngau.testing.things:-20|g" . head)
+
+timerTests :: Spec
+timerTests = describe "A Timer" $ do
+    it "should have a kind tag of |ms" $ do
+        (capture, _) <- st 1000 $ time 0 time_test
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "time.test:0|ms" . head)
+
+    it "should report in milliseconds" $ do
+        (capture, _) <- st 1000 $ time 1.0 time_test
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (ByteString.isPrefixOf "time.test:1000|ms" . head)
+
+    it "should handle DiffTimes appropriately" $ do
+        (capture, _) <- st 1000 $ do
+            now <- liftIO getPOSIXTime
+            sleepMs 250
+            then' <- liftIO getPOSIXTime
+            time (then' - now) time_test
+
+        capture `shouldSatisfy` (not . null)
+        capture `shouldSatisfy` (isRoughlyMillis 250 10 . head)
+
+        where isRoughlyMillis target leeway bs = abs (actual - target) <= leeway
+                    where actual = read pluckedTime
+                          pluckedTime = takeWhile isNumber nameStripped
+                          nameStripped = drop (ByteString.length (timerName time_test) + 1) (Char8.unpack bs)
