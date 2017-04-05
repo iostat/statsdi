@@ -19,6 +19,7 @@ import           Control.Monad.Trans.Lift.Local
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as ByteString
 import qualified Data.ByteString.Char8          as Char8
+import           Data.Dequeue
 import           Data.HashMap.Strict            (HashMap)
 import qualified Data.HashMap.Strict            as HashMap
 import           Data.IORef
@@ -64,9 +65,9 @@ mkStatsDSocket cfg = do
 
 
 forkStatsThread :: (MonadIO m, Monad m) => StatsTEnvironment -> m ThreadId
-forkStatsThread env@(StatsTEnvironment (cfg, socket, state)) = liftIO $ do
-    me <- myThreadId
-    forkFinally loop $ \e -> do
+forkStatsThread env@(StatsTEnvironment (cfg, socket, state)) = do
+    me <- liftIO myThreadId
+    liftIO . forkFinally loop $ \e -> do
         borrowTMVar socket $ \s -> do
             isConnected <- Socket.isConnected s
             when isConnected $ Socket.close s
@@ -88,8 +89,11 @@ forkStatsThread env@(StatsTEnvironment (cfg, socket, state)) = liftIO $ do
 
 reportSamples :: MonadIO m => StatsTEnvironment -> m ()
 reportSamples (StatsTEnvironment (cfg, socket, state)) = do
-    samples <- getAndWipeStates
-    borrowTMVar socket $ \sock -> forM_ samples (reportSample sock)
+    (samples, queuedEvents) <- getAndWipeStates
+    borrowTMVar socket $ \sock -> do
+        forM_ samples (reportSample sock)
+        liftIO $ forM_ queuedEvents (Socket.send sock)
+
     where reportSample :: (MonadIO m) => Socket.Socket -> (MetricStoreKey, MetricStore) -> m ()
           reportSample sock (key, value) = void . liftIO $ Socket.send sock message
               where message    = ByteString.concat [keyName key, ":", value', keyKind key, sampleRate, tagSep, allTags]
@@ -106,9 +110,9 @@ reportSamples (StatsTEnvironment (cfg, socket, state)) = do
                                 "" -> []
                                 x  -> [x]
 
-          getAndWipeStates :: (MonadIO m) => m [(MetricStoreKey, MetricStore)]
-          getAndWipeStates = liftIO . atomicModifyIORef' state $ \(StatsTState m) ->
-                (StatsTState HashMap.empty, HashMap.toList m)
+          getAndWipeStates :: (MonadIO m) => m ([(MetricStoreKey, MetricStore)], BankersDequeue ByteString)
+          getAndWipeStates = liftIO . atomicModifyIORef' state $ \(StatsTState m q) ->
+                (StatsTState HashMap.empty empty, (HashMap.toList m, q))
 
           defaultRenderedTags :: ByteString
           defaultRenderedTags = renderTags (defaultTags cfg)

@@ -10,6 +10,7 @@ import           Control.Monad.IO.Class
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as ByteString
 import qualified Data.ByteString.Char8  as Char8
+import           Data.Dequeue
 import           Data.Hashable
 import           Data.HashMap.Strict    (HashMap)
 import qualified Data.HashMap.Strict    as HashMap
@@ -17,9 +18,10 @@ import           Data.IORef
 import           Data.Time.Clock        (UTCTime)
 import           Network.Socket         (Socket)
 
+
 type Tag  = (ByteString, ByteString)
 type Tags = [Tag]
-newtype SampleRate = SampleRate Float deriving (Eq, Ord, Read, Show)
+newtype SampleRate = SampleRate Float deriving (Eq, Ord, Read, Show, Num, Fractional)
 
 data MetricStoreKey = CounterKey   { ckMetric :: Counter   }
                     | GaugeKey     { gkMetric :: Gauge     }
@@ -166,8 +168,10 @@ data NonMetricEvent = HistogramEvent Histogram MetricStore
                     deriving (Eq, Read, Show)
 
 data StatsTState =
-    StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore } deriving (Eq, Read, Show)
+    StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore
+                , queuedLines       :: BankersDequeue ByteString
+                } deriving (Eq, Read, Show)
 
 mkStatsTEnv :: (MonadIO m, Monad m) => StatsTConfig -> TMVar Socket -> m StatsTEnvironment
 mkStatsTEnv conf socket = liftIO $
-    StatsTEnvironment . (conf,socket,) <$> newIORef (StatsTState HashMap.empty)
+    StatsTEnvironment . (conf,socket,) <$> newIORef (StatsTState HashMap.empty empty)

@@ -17,6 +17,10 @@ myTag = Proxy
 
 defineCounter "ctr.hello.world" []
 defineCounter "ctr.bye.world" [("env","test")]
+defineGauge "gau.testing.things" []
+defineTimer "time.to.end.of.earth" []
+defineHistogram "hist.stuff.things" [] 1.0
+defineSet "set.of.people" []
 
 ourStatsTConfig :: StatsTConfig
 ourStatsTConfig = defaultStatsTConfig { flushInterval = 500 }

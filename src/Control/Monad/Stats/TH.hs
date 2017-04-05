@@ -26,6 +26,7 @@ __mkByteString = Char8.pack
 
 defField :: String -> [TH.FieldExp] -> String -> [(String, String)] -> TH.DecsQ
 defField typeName moreFields metricName metricTags = do
+    unless (isValidMetricName metricName) . fail $ metricName ++ " is not a valid name for a " ++ typeName
     validatedTags <- sequence $ transformTag <$> metricTags
     let type'         = TH.mkName typeName
         nameFieldName = TH.mkName $ (toLower <$> typeName) ++ "Name"
@@ -53,8 +54,10 @@ defineTimer :: String -> [(String, String)] -> TH.DecsQ
 defineTimer = defField "Timer" []
 
 defineHistogram :: String -> [(String, String)] -> Rational -> TH.DecsQ
-defineHistogram metricName metricTags sampleRate = defField "Histogram" [sampleRateField] metricName metricTags
-    where sampleRateField = (TH.mkName "histogramSampleRate", TH.LitE (TH.RationalL sampleRate))
+defineHistogram metricName metricTags sampleRate = do
+    when (sampleRate < 0.0 || sampleRate > 1.0) . fail $ "Histogram sample rate must be between 0.0 and 1.0"
+    defField "Histogram" [sampleRateField] metricName metricTags
+    where sampleRateField = (TH.mkName "_histogramSampleRate", TH.LitE (TH.RationalL sampleRate))
 
 defineSet :: String -> [(String, String)] -> TH.DecsQ
 defineSet = defField "Set" []
@@ -84,6 +87,13 @@ transformTag (name, value) = do
     unless ((length strippedValue + length strippedValue) <= 199) . fail $ "Tag `" ++ show ret ++ "` ends up longer than 200 chars`"
     return ret
 
+satisfiesParser :: ReadP a -> String -> Bool
+satisfiesParser p = predicate . readP_to_S p
+    where predicate hits = not (null hits) && length hits == 1
+
+isValidMetricName :: String -> Bool
+isValidMetricName = not . null . readP_to_S validateMetricName
+
 isValidTag :: (String, String) -> Bool
 isValidTag (name, val) = isValidTagName name
 
@@ -91,15 +101,21 @@ isValidTagName :: String -> Bool
 isValidTagName name = isValidTagNameForm name && name /= "device"
 
 isValidTagNameForm :: String -> Bool
-isValidTagNameForm = not . null . readP_to_S validateTagName
+isValidTagNameForm = satisfiesParser validateTagName
 
 isValidTagValueForm :: String -> Bool
-isValidTagValueForm = not . null . readP_to_S validateTagValue
+isValidTagValueForm = satisfiesParser validateTagValue
 
 isAsciiAlpha    :: Char -> Bool
 isAsciiAlpha     c = isAscii c && isAlpha c
 isAsciiAlphaNum :: Char -> Bool
 isAsciiAlphaNum  c = isAscii c && isAlphaNum c
+
+validateMetricName :: ReadP String
+validateMetricName = do
+    first <- satisfy isAsciiAlpha
+    rest <- flip manyTill eof $ satisfy (\c -> c `elem` "_." || isAsciiAlphaNum c)
+    return $ first : rest
 
 validateTagName :: ReadP String
 validateTagName = do
