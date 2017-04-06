@@ -62,17 +62,8 @@ defineHistogram metricName metricTags sampleRate = do
 defineSet :: String -> [(String, String)] -> TH.DecsQ
 defineSet = defField "Set" []
 
-{-
-
-tags
-no trailing underscores
-"device" is not allowed
-max 200 chars
-must start with letter
-can only contain alphanumerics or underscores
-[_-./A-z0-9]
-
--}
+defineServiceCheck :: String -> [(String, String)] -> TH.DecsQ
+defineServiceCheck = defField "ServiceCheck" []
 
 transformTag :: (String, String) -> TH.Q (String, String)
 transformTag (name, value) = do

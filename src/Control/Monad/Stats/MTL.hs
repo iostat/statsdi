@@ -55,5 +55,5 @@ sample = Ethereal.sample mtlStatsT
 reportEvent :: (MonadStats m) => Event -> m ()
 reportEvent = Ethereal.reportEvent mtlStatsT
 
-reportServiceCheck :: (MonadStats m) => ServiceCheck -> m ()
+reportServiceCheck :: (MonadStats m) => ServiceCheck -> ServiceCheckValue -> m ()
 reportServiceCheck = Ethereal.reportServiceCheck mtlStatsT

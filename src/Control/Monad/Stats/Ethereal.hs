@@ -1,6 +1,8 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 module Control.Monad.Stats.Ethereal
     ( MonadStats
     , borrowTMVar
@@ -21,10 +23,12 @@ import           Control.Monad.Stats.Types
 import           Control.Monad.Stats.Util
 import           Data.ByteString           (ByteString)
 import           Data.ByteString           as ByteString
+import qualified Data.ByteString.Char8     as Char8
 import           Data.Dequeue
 import           Data.HashMap.Strict       (HashMap)
 import           Data.IORef
 import           Data.Time                 (NominalDiffTime)
+import           Data.Time.Clock.POSIX     (getPOSIXTime)
 import           Network.Socket
 
 type MonadStats t m = (Monad m, MonadIO m, MonadReader t StatsTEnvironment m)
@@ -79,7 +83,28 @@ sample  :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
 sample = setRegularValue
 
 reportEvent :: (MonadStats tag m) => proxy tag -> Event -> m ()
-reportEvent = undefined
+reportEvent tag = enqueueNonMetric tag . renderEvent
+    where renderEvent = undefined
 
-reportServiceCheck :: (MonadStats tag m) => proxy tag -> ServiceCheck -> m ()
-reportServiceCheck = undefined
+reportServiceCheck :: (MonadStats tag m) => proxy tag -> ServiceCheck -> ServiceCheckValue -> m ()
+reportServiceCheck t ServiceCheck{..} ServiceCheckValue{..} = do
+    defT <- asks t (defaultTags . envConfig)
+    timestamp <- case scvTimestamp of
+        Just x  -> return $ ts x
+        Nothing -> ts <$> liftIO getPOSIXTime
+    enqueueNonMetric t $ renderSC timestamp defT
+    where renderSC ts defT = ByteString.concat [ "_sc|"
+                                               , serviceCheckName
+                                               , "|"
+                                               , renderServiceCheckStatus scvStatus
+                                               , ts
+                                               , hostname
+                                               , tagBit defT
+                                               , message
+                                               ]
+          tagBit d = renderAllTags [d, serviceCheckTags]
+          hostname = tagged "|h:" scvHostname
+          message  = tagged "|m:" scvMessage
+          ts time  = ByteString.concat ["|d:", Char8.pack . show $ posixToMillis time]
+          tagged x = maybe "" (\y -> ByteString.concat [x,y])
+

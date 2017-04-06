@@ -15,7 +15,7 @@ import           Data.Hashable
 import           Data.HashMap.Strict    (HashMap)
 import qualified Data.HashMap.Strict    as HashMap
 import           Data.IORef
-import           Data.Time.Clock        (UTCTime)
+import           Data.Time.Clock.POSIX  (POSIXTime)
 import           Network.Socket         (Socket)
 
 
@@ -86,18 +86,17 @@ data Event =
     Event { eventName      :: ByteString
           , eventText      :: ByteString
           , eventTags      :: Tags
-          , eventTimestamp :: Maybe UTCTime
+          , eventTimestamp :: Maybe POSIXTime
           , eventHostname  :: Maybe ByteString
           , eventAggKey    :: Maybe ByteString
           , eventPriority  :: Maybe Priority
           , eventSource    :: Maybe ByteString
           , eventAlertType :: Maybe AlertType
-          } deriving (Eq, Ord, Read, Show)
+          } deriving (Eq, Ord, Show)
 
 data ServiceCheck =
-    ServiceCheck { svcCheckName      :: ByteString
-                 , svcCheckTags      :: Tags
-                 , svcCheckTimestamp :: UTCTime
+    ServiceCheck { serviceCheckName      :: ByteString
+                 , serviceCheckTags      :: Tags
                  } deriving (Eq, Ord, Read, Show)
 
 data Priority = Normal | Low
@@ -108,6 +107,29 @@ data AlertType = Error | Warning | Info | Success
 
 data ServiceCheckStatus = StatusOK | StatusWarning | StatusCritical | StatusUnknown
     deriving (Eq, Ord, Read, Show)
+
+data ServiceCheckValue =
+    ServiceCheckValue { scvStatus    :: ServiceCheckStatus
+                      , scvTimestamp :: Maybe POSIXTime
+                      , scvHostname  :: Maybe ByteString
+                      , scvMessage   :: Maybe ByteString
+                      } deriving (Eq, Show)
+
+renderServiceCheckStatus :: ServiceCheckStatus -> ByteString
+renderServiceCheckStatus StatusOK       = "0"
+renderServiceCheckStatus StatusWarning  = "1"
+renderServiceCheckStatus StatusCritical = "2"
+renderServiceCheckStatus StatusUnknown  = "3"
+
+renderTags :: Tags -> ByteString
+renderTags = ByteString.intercalate "," . map renderTag
+    where renderTag :: Tag -> ByteString
+          renderTag (k, v) = ByteString.concat [k, ":", v]
+
+renderAllTags :: [Tags] -> ByteString
+renderAllTags tags = case concat tags of
+    [] -> ""
+    xs -> ByteString.concat ["|#", renderTags xs]
 
 instance Metric Counter where
     metricStoreKey = CounterKey
@@ -165,7 +187,7 @@ data NonMetricEvent = HistogramEvent Histogram MetricStore
                     | SetEvent Set MetricStore
                     | ServiceCheckEvent ServiceCheck
                     | EventEvent Event
-                    deriving (Eq, Read, Show)
+                    deriving (Eq, Show)
 
 data StatsTState =
     StatsTState { registeredMetrics :: HashMap MetricStoreKey MetricStore

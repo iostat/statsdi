@@ -96,41 +96,23 @@ reportSamples (StatsTEnvironment (cfg, socket, state)) = do
 
     where reportSample :: (MonadIO m) => Socket.Socket -> (MetricStoreKey, MetricStore) -> m ()
           reportSample sock (key, MetricStore value) = void . liftIO $ Socket.send sock message
-              where message    = if value < 0
-                                 then ByteString.concat [messageWithValue 0, "\n", messageWithValue value]
-                                 else messageWithValue value
-
+              where message  = if value < 0
+                               then ByteString.concat [messageWithValue 0, "\n", messageWithValue value]
+                               else messageWithValue value
                     messageWithValue v = ByteString.concat [ keyName key, ":"
                                                            , Char8.pack (show v)
                                                            , keyKind key
                                                            , sampleRate
-                                                           , tagSep
-                                                           , allTags
+                                                           , renderAllTags [defaultTags cfg, keyTags key]
                                                            ]
                     value'     = Char8.pack (show value)
                     sampleRate = if isHistogram key
                                  then ByteString.concat ["|@", Char8.pack . show $ histogramSampleRate key]
                                  else ""
-                    tagSep     = if ByteString.null allTags then "" else "|#"
-                    allTags    = ByteString.intercalate "," $ mybRendered ++ mybOwnTags
-                        where mybRendered = case defaultRenderedTags of
-                                "" -> []
-                                x  -> [x]
-                              mybOwnTags = case renderTags (keyTags key) of
-                                "" -> []
-                                x  -> [x]
 
           getAndWipeStates :: (MonadIO m) => m ([(MetricStoreKey, MetricStore)], BankersDequeue ByteString)
           getAndWipeStates = liftIO . atomicModifyIORef' state $ \(StatsTState m q) ->
                 (StatsTState HashMap.empty empty, (HashMap.toList m, q))
-
-          defaultRenderedTags :: ByteString
-          defaultRenderedTags = renderTags (defaultTags cfg)
-
-          renderTags :: Tags -> ByteString
-          renderTags = ByteString.intercalate "," . map renderTag
-              where renderTag :: Tag -> ByteString
-                    renderTag (k, v) = ByteString.concat [k, ":", v]
 
 
 type StatsT t m a = ReaderT t StatsTEnvironment m a
