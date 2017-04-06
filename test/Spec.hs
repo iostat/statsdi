@@ -32,6 +32,7 @@ defineGauge "gau.testing.things" []
 defineTimer "time.test" []
 defineHistogram "hist.stuff.things" [] 1.0
 defineSet "set.of.people" []
+defineServiceCheck "svc.haskell" []
 
 ourStatsTConfig :: StatsTConfig
 ourStatsTConfig = defaultStatsTConfig { flushInterval = 250 }

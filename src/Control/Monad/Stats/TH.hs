@@ -4,6 +4,7 @@ module Control.Monad.Stats.TH
     , defineTimer
     , defineHistogram
     , defineSet
+    , defineServiceCheck
     , __mkByteString
     ) where
 
@@ -29,9 +30,9 @@ defField typeName moreFields metricName metricTags = do
     unless (isValidMetricName metricName) . fail $ metricName ++ " is not a valid name for a " ++ typeName
     validatedTags <- sequence $ transformTag <$> metricTags
     let type'         = TH.mkName typeName
-        nameFieldName = TH.mkName $ (toLower <$> typeName) ++ "Name"
+        nameFieldName = TH.mkName $ snek typeName ++ "Name"
         nameFieldExp  = (nameFieldName, bsp metricName)
-        tagsFieldName = TH.mkName $ (toLower <$> typeName) ++ "Tags"
+        tagsFieldName = TH.mkName $ snek typeName ++ "Tags"
         tagsFieldExp  = (tagsFieldName, TH.ListE (tagE <$> validatedTags))
         allFieldExps  = nameFieldExp : tagsFieldExp : moreFields
         varName       = mkMetricName metricName
@@ -120,3 +121,7 @@ stripTrailingUnderscores = reverse . dropWhile (== '_') . reverse
 mkMetricName :: String -> TH.Name
 mkMetricName = TH.mkName . fmap makeUnderscores
     where makeUnderscores c = if isAsciiAlphaNum c then c else '_'
+
+snek :: String -> String
+snek ""     = ""
+snek (c:cs) = toLower c : cs
