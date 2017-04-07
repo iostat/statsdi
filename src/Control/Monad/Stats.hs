@@ -6,6 +6,7 @@ module Control.Monad.Stats
     ( module Export
     , StatsT(..)
     , runStatsT
+    , runNoStatsT
     ) where
 
 import           Control.Concurrent
@@ -23,6 +24,7 @@ import           Data.Dequeue
 import           Data.HashMap.Strict            (HashMap)
 import qualified Data.HashMap.Strict            as HashMap
 import           Data.IORef
+import           Data.Proxy
 import           Data.Time.Clock.POSIX          (getPOSIXTime)
 import qualified Network.Socket                 as Socket hiding (recv,
                                                            recvFrom, send,
@@ -33,9 +35,6 @@ import           Control.Monad.Stats.Ethereal   as Export
 import           Control.Monad.Stats.TH         as Export
 import           Control.Monad.Stats.Types      as Export
 import           Control.Monad.Stats.Util       as Export
-
-
-import           Data.Proxy
 
 -- sample usage
 --
@@ -117,7 +116,7 @@ reportSamples (StatsTEnvironment (cfg, socket, state)) = do
 
 type StatsT t m a = ReaderT t StatsTEnvironment m a
 
-runStatsT :: (Monad m, MonadIO m) => proxy t -> StatsT t m a -> StatsTConfig -> m a
+runStatsT :: (MonadIO m) => proxy t -> StatsT t m a -> StatsTConfig -> m a
 runStatsT t m c = do
     (socket, addr) <- mkStatsDSocket c
     liftIO $ borrowTMVar socket (`Socket.connect` addr)
@@ -128,3 +127,6 @@ runStatsT t m c = do
         reportSamples theEnv -- just in case our actions ran faster than 2x flush interval
         liftIO $ killThread tid
         return ret
+
+runNoStatsT :: (MonadIO m) => proxy t -> StatsT t m a -> m a
+runNoStatsT t = flip (runReaderT t) NoStatsTEnvironment

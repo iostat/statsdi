@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -43,30 +44,26 @@ borrowTMVar tmvar m = do
 borrowSocket :: (MonadIO m, MonadStats tag m) => proxy tag -> (Socket -> m b) -> m b
 borrowSocket tag m = asks tag envSocket >>= flip borrowTMVar m
 
-getSTS :: (MonadStats tag m) => proxy tag -> m StatsTState
-getSTS tag = asks tag envState >>= liftIO . readIORef
-
-setSTS :: (MonadStats tag m) => proxy tag -> StatsTState -> m ()
-setSTS tag state = asks tag envState >>= liftIO . flip atomicWriteIORef state
-
-updSTS :: (MonadStats tag m) => proxy tag -> (StatsTState -> StatsTState) -> m ()
-updSTS tag f = asks tag envState >>= liftIO . flip atomicModifyIORef' (\x -> (f x, ()))
+withSTS :: (MonadStats tag m) => proxy tag -> (StatsTState -> StatsTState) -> m ()
+withSTS tag f = ask tag >>= \case
+    NoStatsTEnvironment -> return ()
+    StatsTEnvironment (_, _, state) -> liftIO $ atomicModifyIORef' state (\x -> (f x, ()))
 
 tick :: (MonadStats tag m) => proxy tag -> Counter -> m ()
 tick tag = tickBy tag 1
 
 tickBy :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()
-tickBy tag n c = updSTS tag f
+tickBy tag n c = withSTS tag f
     where f (StatsTState m q) = flip StatsTState q $ case metricMapLookup c m of
                     Nothing -> metricMapInsert c MetricStore{metricValue = n} m
                     Just (MetricStore n')  -> metricMapInsert c (MetricStore (n' + n)) m
 
 setRegularValue :: (MonadStats tag m, Metric m') => proxy tag -> Int -> m' -> m ()
-setRegularValue tag v c = updSTS tag f
+setRegularValue tag v c = withSTS tag f
     where f (StatsTState m q) = StatsTState (metricMapInsert c (fromIntegral v) m) q
 
 enqueueNonMetric :: (MonadStats tag m) => proxy tag -> ByteString -> m ()
-enqueueNonMetric tag e = updSTS tag f
+enqueueNonMetric tag e = withSTS tag f
     where f (StatsTState m q) = StatsTState m (pushBack q e)
 
 setCounter :: (MonadStats tag m) => proxy tag -> Int -> Counter -> m ()

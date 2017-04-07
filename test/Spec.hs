@@ -49,7 +49,7 @@ sleepMs = liftIO . threadDelay . (1000 *)
 main :: IO ()
 main = do
     putStrLn ""
-    let toRun = [sillyTests, counterTests, gaugeTests, timerTests]
+    let toRun = [sillyTests, counterTests, gaugeTests, timerTests, noStatsTTest]
     forM toRun testSpecs >>= defaultMain . withTests
 
 withTests :: [[TestTree]] -> TestTree
@@ -128,3 +128,19 @@ timerTests = describe "A Timer" $ do
                     where actual = read pluckedTime
                           pluckedTime = takeWhile isNumber nameStripped
                           nameStripped = drop (ByteString.length (timerName time_test) + 1) (Char8.unpack bs)
+
+noStatsTTest :: Spec
+noStatsTTest = describe "runNoStatsT" $ do
+    it "should successfully run its inner monad without any funny hiccups" $ do
+        ret <- runNoStatsT $ return True
+        ret `shouldBe` True
+
+    describe "should successfully run its inner monad even it performs Counter metrics" $ do
+        it "works with tick" $
+            runNoStatsT (tick ctr_hello_world) >>= shouldBe ()
+        it "works with tickBy" $
+            runNoStatsT (tickBy 2 ctr_hello_world) >>= shouldBe ()
+
+    describe "should successfully run its inner monad even it performs Gauge metrics" $
+            it "works with setGauge" $
+                runNoStatsT (setGauge 20 gau_testing_things) >>= shouldBe ()

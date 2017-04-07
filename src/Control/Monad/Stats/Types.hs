@@ -164,15 +164,20 @@ defaultStatsTConfig = StatsTConfig { host = "127.0.0.1"
                                    , defaultTags = []
                                    }
 
-newtype StatsTEnvironment = StatsTEnvironment (StatsTConfig, TMVar Socket, IORef StatsTState)
+data StatsTEnvironment = StatsTEnvironment (StatsTConfig, TMVar Socket, IORef StatsTState)
+                       | NoStatsTEnvironment
+                       deriving (Eq)
 
 envConfig :: StatsTEnvironment -> StatsTConfig
+envConfig NoStatsTEnvironment = error "called envConfig inside a runNoStatsT"
 envConfig (StatsTEnvironment (a, _, _)) = a
 
 envSocket :: StatsTEnvironment -> TMVar Socket
+envSocket NoStatsTEnvironment = error "called envSocket inside a runNoStatsT"
 envSocket (StatsTEnvironment (_, b, _)) = b
 
 envState :: StatsTEnvironment -> IORef StatsTState
+envState NoStatsTEnvironment = error "called envState inside a runNoStatsT"
 envState (StatsTEnvironment (_, _, c)) = c
 
 type MetricMap = HashMap MetricStoreKey MetricStore

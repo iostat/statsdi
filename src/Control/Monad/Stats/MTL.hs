@@ -7,6 +7,7 @@ module Control.Monad.Stats.MTL
     , MonadStats
     , StatsT
     , runStatsT
+    , runNoStatsT
     , tick
     , tickBy
     , setCounter
@@ -31,8 +32,11 @@ ethereal "MTLStatsT" "mtlStatsT"
 type MonadStats m = (Monad m, MonadIO m, Ethereal.MonadStats MTLStatsT m)
 type StatsT m a = Ethereal.StatsT MTLStatsT m a
 
-runStatsT :: (MonadIO m, Monad m) => StatsT m a -> StatsTConfig -> m a
+runStatsT :: (MonadIO m) => StatsT m a -> StatsTConfig -> m a
 runStatsT = Ethereal.runStatsT mtlStatsT
+
+runNoStatsT :: (MonadIO m) => StatsT m a -> m a
+runNoStatsT = Ethereal.runNoStatsT mtlStatsT
 
 tick :: (MonadStats m) => Counter -> m ()
 tick = Ethereal.tick mtlStatsT
