@@ -6,7 +6,7 @@
 import           Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Control.Monad.Stats.MTL
+import           Control.Monad.Stats
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as ByteString
 import qualified Data.ByteString.Char8   as Char8
@@ -49,7 +49,7 @@ sleepMs = liftIO . threadDelay . (1000 *)
 main :: IO ()
 main = do
     putStrLn ""
-    let toRun = [sillyTests, counterTests, gaugeTests, timerTests, noStatsTTest]
+    let toRun = [sillyTests, noStatsTTest, counterTests, gaugeTests, timerTests]
     forM toRun testSpecs >>= defaultMain . withTests
 
 withTests :: [[TestTree]] -> TestTree
@@ -144,3 +144,12 @@ noStatsTTest = describe "runNoStatsT" $ do
     describe "should successfully run its inner monad even it performs Gauge metrics" $
             it "works with setGauge" $
                 runNoStatsT (setGauge 20 gau_testing_things) >>= shouldBe ()
+
+    describe "should successfully run its inner monad even it performs Timer metrics" $
+                it "works with time" $ do
+                    ret <- runNoStatsT $ do
+                        now <- liftIO getPOSIXTime
+                        sleepMs 250
+                        then' <- liftIO getPOSIXTime
+                        time (then' - now) time_test
+                    ret `shouldBe` ()

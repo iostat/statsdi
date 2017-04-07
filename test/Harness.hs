@@ -7,7 +7,7 @@ import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Control.Monad.Stats.MTL
+import           Control.Monad.Stats
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as ByteString
 import           Data.Time.Clock.POSIX

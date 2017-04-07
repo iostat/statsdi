@@ -17,10 +17,11 @@ library
   hs-source-dirs:      src
   exposed-modules:     Control.Monad.Stats
                      , Control.Monad.Stats.Ethereal
-                     , Control.Monad.Stats.MTL
                      , Control.Monad.Stats.TH
                      , Control.Monad.Stats.Types
                      , Control.Monad.Stats.Util
+  other-modules:       Control.Monad.Stats.Monad
+                     , Control.Monad.Stats.MTL
   build-depends:       base >= 4.7 && < 5
                      , network
                      , dequeue

@@ -95,15 +95,25 @@ data Event =
           } deriving (Eq, Ord, Show)
 
 data ServiceCheck =
-    ServiceCheck { serviceCheckName      :: ByteString
-                 , serviceCheckTags      :: Tags
+    ServiceCheck { serviceCheckName :: ByteString
+                 , serviceCheckTags :: Tags
                  } deriving (Eq, Ord, Read, Show)
 
 data Priority = Normal | Low
     deriving (Eq, Ord, Read, Show)
 
+renderPriority :: Priority -> ByteString
+renderPriority Normal = "normal"
+renderPriority Low    = "low"
+
 data AlertType = Error | Warning | Info | Success
     deriving (Eq, Ord, Read, Show)
+
+renderAlertType :: AlertType -> ByteString
+renderAlertType Error   = "error"
+renderAlertType Warning = "warning"
+renderAlertType Info    = "info"
+renderAlertType Success = "success"
 
 data ServiceCheckStatus = StatusOK | StatusWarning | StatusCritical | StatusUnknown
     deriving (Eq, Ord, Read, Show)

@@ -3,9 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
 module Control.Monad.Stats.MTL
-    ( module Export
-    , MonadStats
-    , StatsT
+    ( MonadStats
+    , StatsT(..)
     , runStatsT
     , runNoStatsT
     , tick
@@ -13,7 +12,8 @@ module Control.Monad.Stats.MTL
     , setCounter
     , setGauge
     , time
-    , sample
+    , histoSample
+    , addSetMember
     , reportEvent
     , reportServiceCheck
     , MTLStatsT, mtlStatsT
@@ -21,11 +21,9 @@ module Control.Monad.Stats.MTL
 
 import           Control.Monad.Ether
 import           Control.Monad.IO.Class
-import           Control.Monad.Stats.TH    as Export
-import           Control.Monad.Stats.Types as Export hiding (MonadStats, StatsT)
+import qualified Control.Monad.Stats.Monad as Ethereal
+import           Control.Monad.Stats.Types
 import           Data.Time.Clock           (NominalDiffTime)
-
-import qualified Control.Monad.Stats       as Ethereal
 
 ethereal "MTLStatsT" "mtlStatsT"
 
@@ -53,8 +51,11 @@ setGauge = Ethereal.setGauge mtlStatsT
 time :: (MonadStats m) => NominalDiffTime -> Timer -> m ()
 time = Ethereal.time mtlStatsT
 
-sample  :: (MonadStats m) => Int -> Histogram -> m ()
-sample = Ethereal.sample mtlStatsT
+histoSample  :: (MonadStats m) => Int -> Histogram -> m ()
+histoSample = Ethereal.histoSample mtlStatsT
+
+addSetMember :: (MonadStats m) => Int -> Set -> m ()
+addSetMember = Ethereal.addSetMember mtlStatsT
 
 reportEvent :: (MonadStats m) => Event -> m ()
 reportEvent = Ethereal.reportEvent mtlStatsT
