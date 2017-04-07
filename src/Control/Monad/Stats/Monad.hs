@@ -40,6 +40,7 @@ import           Data.Time.Clock.POSIX     (POSIXTime, getPOSIXTime)
 import qualified Network.Socket            as Socket hiding (recv, recvFrom,
                                                       send, sendTo)
 import qualified Network.Socket.ByteString as Socket
+import           System.Random             (getStdRandom, random)
 
 type MonadStats t m = (Monad m, MonadIO m, MonadReader t StatsTEnvironment m)
 
@@ -89,8 +90,12 @@ time :: (Real n, Fractional n, MonadStats tag m) => proxy tag -> n -> Timer -> m
 time tag = setRegularValue tag . v
     where v = round . (* 1000.0) . toDouble
 
-histoSample  :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
-histoSample = setRegularValue
+histoSample :: (MonadStats tag m) => proxy tag -> Int -> Histogram -> m ()
+histoSample tag v Histogram{..} = withEnvironment tag $ \env -> do
+    rando <- liftIO $ getStdRandom random -- per System.Random docs: for fractional types,
+                                          -- the range is normally the semi-closed interval [0,1).
+    when (rando < _histogramSampleRate) $ enqueueNonMetric tag (rendered env)
+    where rendered = renderSimpleMetric histogramName v "|h" histogramTags (Just _histogramSampleRate)
 
 renderTimestamp :: POSIXTime -> ByteString
 renderTimestamp time = ByteString.concat ["|d:", Char8.pack . show $ posixToMillis time]
@@ -98,14 +103,18 @@ renderTimestamp time = ByteString.concat ["|d:", Char8.pack . show $ posixToMill
 renderKeyedField :: ByteString -> Maybe ByteString -> ByteString
 renderKeyedField x = maybe "" (\y -> ByteString.concat [x,y])
 
+renderSimpleMetric :: ByteString -> Int -> ByteString -> Tags -> Maybe SampleRate -> StatsTEnvironment -> ByteString
+renderSimpleMetric name value kind tags sampleRate env =
+    ByteString.concat [ name, ":"
+                      , Char8.pack (show value)
+                      , kind
+                      , maybe "" (ByteString.append "|@" . Char8.pack . show) sampleRate
+                      , renderAllTags [defaultTags (envConfig env), tags]
+                      ]
+
 addSetMember :: (MonadStats tag m) => proxy tag -> Int -> Set -> m ()
 addSetMember tag member Set{..} = withEnvironment tag $ enqueueNonMetric tag . rendered
-    where rendered env = ByteString.concat [ setName
-                                           , ":"
-                                           , Char8.pack (show member)
-                                           , "|s"
-                                           , renderAllTags [defaultTags (envConfig env), setTags]
-                                           ]
+    where rendered = renderSimpleMetric setName member "|s" setTags Nothing
 
 reportEvent :: (MonadStats tag m) => proxy tag -> Event -> m ()
 reportEvent tag Event{..} = withEnvironment tag $ \env -> do
@@ -182,7 +191,7 @@ forkStatsThread env@(StatsTEnvironment (cfg, socket, state)) = do
               threadDelay (interval * 1000 - fromIntegral (end - start))
 
 reportSamples :: MonadIO m => StatsTEnvironment -> m ()
-reportSamples (StatsTEnvironment (cfg, socket, state)) = do
+reportSamples env@(StatsTEnvironment (cfg, socket, state)) = do
     (samples, queuedEvents) <- getAndWipeStates
     borrowTMVar socket $ \sock -> do
         forM_ samples (reportSample sock)
@@ -191,18 +200,13 @@ reportSamples (StatsTEnvironment (cfg, socket, state)) = do
     where reportSample :: (MonadIO m) => Socket.Socket -> (MetricStoreKey, MetricStore) -> m ()
           reportSample sock (key, MetricStore value) = void . liftIO $ Socket.send sock message
               where message  = if value < 0
-                               then ByteString.concat [messageWithValue 0, "\n", messageWithValue value]
-                               else messageWithValue value
-                    messageWithValue v = ByteString.concat [ keyName key, ":"
-                                                           , Char8.pack (show v)
-                                                           , keyKind key
-                                                           , sampleRate
-                                                           , renderAllTags [defaultTags cfg, keyTags key]
-                                                           ]
+                               then ByteString.concat [msg' 0, "\n", msg' value]
+                               else msg' value
+                    msg' v     = renderSimpleMetric (keyName key) v (keyKind key) (keyTags key) sampleRate env
                     value'     = Char8.pack (show value)
                     sampleRate = if isHistogram key
-                                 then ByteString.concat ["|@", Char8.pack . show $ histogramSampleRate key]
-                                 else ""
+                                 then Just $ histogramSampleRate key
+                                 else Nothing
 
           getAndWipeStates :: (MonadIO m) => m ([(MetricStoreKey, MetricStore)], BankersDequeue ByteString)
           getAndWipeStates = liftIO . atomicModifyIORef' state $ \(StatsTState m q) ->

@@ -131,9 +131,8 @@ timerTests = describe "A Timer" $ do
 
 noStatsTTest :: Spec
 noStatsTTest = describe "runNoStatsT" $ do
-    it "should successfully run its inner monad without any funny hiccups" $ do
-        ret <- runNoStatsT $ return True
-        ret `shouldBe` True
+    it "should successfully run its inner monad without any funny hiccups" $
+        runNoStatsT (return ()) >>= shouldBe ()
 
     describe "should successfully run its inner monad even it performs Counter metrics" $ do
         it "works with tick" $
@@ -142,14 +141,34 @@ noStatsTTest = describe "runNoStatsT" $ do
             runNoStatsT (tickBy 2 ctr_hello_world) >>= shouldBe ()
 
     describe "should successfully run its inner monad even it performs Gauge metrics" $
-            it "works with setGauge" $
-                runNoStatsT (setGauge 20 gau_testing_things) >>= shouldBe ()
+        it "works with setGauge" $
+            runNoStatsT (setGauge 20 gau_testing_things) >>= shouldBe ()
 
     describe "should successfully run its inner monad even it performs Timer metrics" $
-                it "works with time" $ do
-                    ret <- runNoStatsT $ do
-                        now <- liftIO getPOSIXTime
-                        sleepMs 250
-                        then' <- liftIO getPOSIXTime
-                        time (then' - now) time_test
-                    ret `shouldBe` ()
+        it "works with time" $ do
+            ret <- runNoStatsT $ do
+                now <- liftIO getPOSIXTime
+                sleepMs 250
+                then' <- liftIO getPOSIXTime
+                time (then' - now) time_test
+            ret `shouldBe` ()
+
+    describe "should successfully run its inner monad even it performs Histogram metrics" $ do
+        it "works with histoSample" $
+            runNoStatsT (histoSample 3 hist_stuff_things) >>= shouldBe ()
+
+        it "works with multiple calls to histoSample" $ do
+            ret <- runNoStatsT $ do
+                histoSample 18 hist_stuff_things
+                histoSample 19 hist_stuff_things
+            ret `shouldBe` ()
+
+    describe "should successfully run its inner monad even it performs Set metrics" $ do
+        it "works with addSetMember" $
+            runNoStatsT (addSetMember 12 set_of_people) >>= shouldBe ()
+
+        it "works with multiple calls to addSetMember" $ do
+            ret <- runNoStatsT $ do
+                addSetMember 12 set_of_people
+                addSetMember 24 set_of_people
+            ret `shouldBe` ()

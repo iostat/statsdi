@@ -17,11 +17,12 @@ import qualified Data.HashMap.Strict    as HashMap
 import           Data.IORef
 import           Data.Time.Clock.POSIX  (POSIXTime)
 import           Network.Socket         (Socket)
+import           System.Random          (Random)
 
 
 type Tag  = (ByteString, ByteString)
 type Tags = [Tag]
-newtype SampleRate = SampleRate Float deriving (Eq, Ord, Read, Show, Num, Fractional)
+newtype SampleRate = SampleRate Float deriving (Eq, Ord, Read, Show, Num, Fractional, Random)
 
 data MetricStoreKey = CounterKey   { ckMetric :: Counter   }
                     | GaugeKey     { gkMetric :: Gauge     }
