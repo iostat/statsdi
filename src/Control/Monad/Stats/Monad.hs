@@ -217,7 +217,7 @@ reportSamples env@(StatsTEnvironment (cfg, socket, state)) = do
                 (StatsTState HashMap.empty Data.Dequeue.empty, (HashMap.toList m, q))
 
 
-type StatsT t m a = ReaderT t StatsTEnvironment m a
+type StatsT t = ReaderT t StatsTEnvironment
 
 runStatsT :: (MonadIO m) => proxy t -> StatsT t m a -> StatsTConfig -> m a
 runStatsT t m c = do

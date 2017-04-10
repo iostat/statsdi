@@ -28,7 +28,7 @@ import           Data.Time.Clock           (NominalDiffTime)
 ethereal "MTLStatsT" "mtlStatsT"
 
 type MonadStats m = (Monad m, MonadIO m, Ethereal.MonadStats MTLStatsT m)
-type StatsT m a = Ethereal.StatsT MTLStatsT m a
+type StatsT = Ethereal.StatsT MTLStatsT
 
 runStatsT :: (MonadIO m) => StatsT m a -> StatsTConfig -> m a
 runStatsT = Ethereal.runStatsT mtlStatsT
