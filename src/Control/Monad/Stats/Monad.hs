@@ -108,9 +108,13 @@ renderSimpleMetric name value kind tags sampleRate env =
     ByteString.concat [ name, ":"
                       , Char8.pack (show value)
                       , kind
-                      , maybe "" (ByteString.append "|@" . Char8.pack . show) sampleRate
-                      , renderAllTags [defaultTags (envConfig env), tags]
+                      , sampleRateBit
+                      , allTags
                       ]
+    where sampleRateBit = maybe "" (ByteString.append "|@" . Char8.pack . show) sampleRate
+          fullName = ByteString.concat [prefix cfg, name, suffix cfg]
+          cfg      = envConfig env
+          allTags  = renderAllTags [defaultTags cfg, tags]
 
 addSetMember :: (MonadStats tag m) => proxy tag -> Int -> Set -> m ()
 addSetMember tag member Set{..} = withEnvironment tag $ enqueueNonMetric tag . rendered
