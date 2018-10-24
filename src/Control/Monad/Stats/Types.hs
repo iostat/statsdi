@@ -6,7 +6,6 @@
 module Control.Monad.Stats.Types where
 
 import           Control.Concurrent.STM (TMVar)
-import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as ByteString
@@ -17,6 +16,7 @@ import           Data.HashMap.Strict    (HashMap)
 import qualified Data.HashMap.Strict    as HashMap
 import           Data.IORef
 import           Data.Time.Clock.POSIX  (POSIXTime)
+import           Ether
 import           Network.Socket         (Socket)
 import           System.Random          (Random)
 

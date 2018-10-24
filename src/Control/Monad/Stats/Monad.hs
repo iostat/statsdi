@@ -1,9 +1,11 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE RecordWildCards        #-}
 module Control.Monad.Stats.Monad
     ( MonadStats
     , StatsT(..)
@@ -24,7 +26,7 @@ module Control.Monad.Stats.Monad
 import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Exception         (AsyncException (..), fromException)
-import           Control.Monad.Ether
+import           Control.Monad (forever, forM_, when, void)
 import           Control.Monad.IO.Class
 import           Control.Monad.Stats.Types
 import           Control.Monad.Stats.Util
@@ -37,6 +39,7 @@ import qualified Data.HashMap.Strict       as HashMap
 import           Data.IORef
 import           Data.Time                 (NominalDiffTime)
 import           Data.Time.Clock.POSIX     (POSIXTime, getPOSIXTime)
+import           Ether.Reader
 import qualified Network.Socket            as Socket hiding (recv, recvFrom,
                                                       send, sendTo)
 import qualified Network.Socket.ByteString as Socket
@@ -55,7 +58,7 @@ withSocket :: (MonadStats tag m) => proxy tag -> (Socket.Socket -> m ()) -> m ()
 withSocket tag m = withEnvironment tag $ \e -> borrowTMVar (envSocket e) m
 
 withEnvironment :: (MonadStats tag m) => proxy tag -> (StatsTEnvironment -> m ()) -> m ()
-withEnvironment tag f = ask tag >>= \case
+withEnvironment (t :: proxy tag) f = (ask @tag) >>= \case
     NoStatsTEnvironment -> return ()
     env -> f env
 
@@ -144,7 +147,7 @@ reportEvent tag Event{..} = withEnvironment tag $ \env -> do
                                                 ]
 
 reportServiceCheck :: (MonadStats tag m) => proxy tag -> ServiceCheck -> ServiceCheckValue -> m ()
-reportServiceCheck t ServiceCheck{..} ServiceCheckValue{..} = ask t >>= \case
+reportServiceCheck (t :: proxy tag) ServiceCheck{..} ServiceCheckValue{..} = (ask @tag) >>= \case
     NoStatsTEnvironment -> return ()
     env -> do
         timestamp <- case scvTimestamp of
@@ -224,7 +227,7 @@ runStatsT t m c = do
     (socket, addr) <- mkStatsDSocket c
     liftIO $ borrowTMVar socket (`Socket.connect` addr)
     theEnv <- mkStatsTEnv c socket
-    flip (runReaderT t) theEnv $ do
+    flip runReaderT theEnv $ do
         tid <- forkStatsThread theEnv
         ret <- m
         reportSamples theEnv -- just in case our actions ran faster than 2x flush interval
@@ -232,4 +235,4 @@ runStatsT t m c = do
         return ret
 
 runNoStatsT :: (MonadIO m) => proxy t -> StatsT t m a -> m a
-runNoStatsT t = flip (runReaderT t) NoStatsTEnvironment
+runNoStatsT t = flip runReaderT NoStatsTEnvironment

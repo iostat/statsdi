@@ -19,13 +19,16 @@ module Control.Monad.Stats.MTL
     , MTLStatsT, mtlStatsT
     ) where
 
-import           Control.Monad.Ether
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Stats.Monad as Ethereal
 import           Control.Monad.Stats.Types
 import           Data.Time.Clock           (NominalDiffTime)
+import           Data.Proxy                (Proxy(..))
+import           Ether
 
-ethereal "MTLStatsT" "mtlStatsT"
+data MTLStatsT
+mtlStatsT :: Proxy MTLStatsT
+mtlStatsT = Proxy
 
 type MonadStats m = (Monad m, MonadIO m, Ethereal.MonadStats MTLStatsT m)
 type StatsT = Ethereal.StatsT MTLStatsT
