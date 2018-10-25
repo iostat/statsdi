@@ -1,5 +1,5 @@
 name:                statsdi
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A lovely [Dog]StatsD implementation
 description:         An implementation of DogStatsD for collecting and pushing metrics
 homepage:            https://github.com/iostat/statsdi#readme
